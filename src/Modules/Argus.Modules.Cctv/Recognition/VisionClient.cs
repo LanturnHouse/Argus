@@ -33,7 +33,6 @@ public sealed class VisionClient : IDisposable
     /// false 면 서버에 연결하지 못했거나 시간 초과 같은 문제라 이미지는 그대로 두고 나중에 다시 시도한다.
     /// </summary>
     public bool LastFailureWasBadResponse { get; private set; }
-    public DateTime? LastSuccessAt { get; private set; }
 
     private static readonly Dictionary<RegionKind, string> Prompts = new()
     {
@@ -86,6 +85,9 @@ public sealed class VisionClient : IDisposable
         catch (Exception ex) { return (null, ex is HttpRequestException ? $"Ollama({settings.Host})에 연결할 수 없습니다. 실행 중인지 확인하세요." : ex.Message); }
     }
 
+    /// <summary>답의 길이 상한. 모델이 같은 행을 끝없이 되풀이하는 일이 있어, 영역마다 정상 답이 닿을 만한 만큼만 허용해 헛도는 시간을 줄인다.</summary>
+    private static int MaxTokens(RegionKind kind) => kind switch { RegionKind.Dock => 120, RegionKind.Probe => 2000, _ => 3500 };
+
     /// <summary>모델에게 영역 이미지(PNG)를 읽게 한다. 실패하면 null (이유는 <see cref="LastError"/>).</summary>
     public async Task<JsonObject?> RecognizeAsync(RegionKind kind, byte[] png, VisionSettings settings, CancellationToken ct = default)
     {
@@ -94,7 +96,7 @@ public sealed class VisionClient : IDisposable
         {
             ["model"] = settings.Model, ["prompt"] = prompt, ["images"] = new JsonArray(Convert.ToBase64String(png)),
             ["format"] = "json", ["stream"] = false, ["keep_alive"] = settings.KeepAlive,
-            ["options"] = new JsonObject { ["temperature"] = 0, ["num_predict"] = 4000 },
+            ["options"] = new JsonObject { ["temperature"] = 0, ["num_predict"] = MaxTokens(kind) },
         };
         var (json, error) = await PostGenerateAsync(settings, body, settings.TimeoutSeconds, ct).ConfigureAwait(false);
         if (json == null) { LastError = error; LastFailureWasBadResponse = false; return null; }
@@ -107,7 +109,7 @@ public sealed class VisionClient : IDisposable
             LastFailureWasBadResponse = true;
             return null;
         }
-        LastError = null; LastFailureWasBadResponse = false; LastSuccessAt = DateTime.Now;
+        LastError = null; LastFailureWasBadResponse = false;
         return parsed;
     }
 

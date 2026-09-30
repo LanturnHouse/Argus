@@ -23,6 +23,10 @@ internal sealed class Db : IDisposable
 {
     private readonly SqliteConnection _conn;
     private readonly object _lock = new();
+    private long _writes;
+
+    /// <summary>지금까지 실행한 쓰기(Exec)의 횟수. 화면이 "바뀐 게 없으면 다시 읽지 않기"를 판단하는 데 쓴다.</summary>
+    public long WriteCount => Interlocked.Read(ref _writes);
 
     public Db(string path)
     {
@@ -62,7 +66,7 @@ internal sealed class Db : IDisposable
 
     public int Exec(string sql, params object?[] args)
     {
-        lock (_lock) { using var cmd = Command(sql, args); return cmd.ExecuteNonQuery(); }
+        lock (_lock) { using var cmd = Command(sql, args); var changes = cmd.ExecuteNonQuery(); Interlocked.Increment(ref _writes); return changes; }
     }
 
     public long LastInsertId() { lock (_lock) { using var cmd = _conn.CreateCommand(); cmd.CommandText = "SELECT last_insert_rowid()"; return Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture); } }

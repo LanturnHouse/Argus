@@ -75,7 +75,13 @@ public sealed class CctvService : IDisposable
         _regionSub = _ctx.Events.Subscribe<RegionChanged>(e => { if (e.SavedPath != null) _scanNow = true; });
     }
 
-    public void SaveSettings() { Settings.Normalize(); _ctx.Settings.Save(SettingsKey, Settings); }
+    public void SaveSettings() { Settings.Normalize(); _ctx.Settings.Save(SettingsKey, Settings); _captureFolder = null; }
+
+    /// <summary>화면에 영향을 주는 메모리 상태가 바뀌면 달라지는 값. 저장소의 쓰기 횟수와 함께 "다시 그릴 필요가 있는가"를 판단하는 데 쓴다.</summary>
+    public string ChangeStamp()
+    {
+        lock (_lock) return string.Join('|', State, Message, IsError, _processing, _lastAnalyzedAt?.Ticks, _recognizer.ModelCalls, _recognizer.ReusedCalls, Settings.Vision.Model, Settings.TimelineLimit, ImageFolder);
+    }
 
     public VisionClient Vision => _vision;
 
@@ -85,10 +91,19 @@ public sealed class CctvService : IDisposable
         get
         {
             if (!string.IsNullOrWhiteSpace(Settings.ImageFolder)) return Settings.ImageFolder;
-            var capture = _ctx.Settings.Load<CaptureFolderProbe>("capture").OutputFolder;
-            return string.IsNullOrWhiteSpace(capture) ? _ctx.DataDirectory("argus.capture") : capture;
+            // 화면 감시 캡처의 설정 파일은 디스크에서 읽으므로, 초당 여러 번 묻지 않도록 잠깐 기억해 둔다.
+            var now = Environment.TickCount64;
+            if (_captureFolder == null || now - _captureFolderAt > 3000)
+            {
+                var capture = _ctx.Settings.Load<CaptureFolderProbe>("capture").OutputFolder;
+                _captureFolder = string.IsNullOrWhiteSpace(capture) ? _ctx.DataDirectory("argus.capture") : capture;
+                _captureFolderAt = now;
+            }
+            return _captureFolder;
         }
     }
+    private string? _captureFolder;
+    private long _captureFolderAt;
     private sealed class CaptureFolderProbe { public string OutputFolder { get; set; } = ""; }
 
     // ---------- 폴더 감시 ----------
@@ -250,13 +265,13 @@ public sealed class CctvService : IDisposable
             catch (RecognitionFailedException ex) when (image != null)
             {
                 var n = _attempts[image.Id] = _attempts.GetValueOrDefault(image.Id) + 1;
-                if (n >= 3) { Store.FailImage(image.Id, ex.Message); SetProblem($"인식 실패: {image.Filename} · {ex.Message}"); }
+                if (n >= 3) { Store.FailImage(image.Id); SetProblem($"인식 실패: {image.Filename} · {ex.Message}"); }
                 else Store.MarkPending(image.Id);
                 try { await Task.Delay(500, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
             }
             catch (Exception ex)
             {
-                if (image != null) { Store.FailImage(image.Id, ex.Message); SetProblem($"분석 실패: {image.Filename} · {ex.Message}"); }
+                if (image != null) { Store.FailImage(image.Id); SetProblem($"분석 실패: {image.Filename} · {ex.Message}"); }
                 else { SetProblem("분석 오류: " + ex.Message); try { await Task.Delay(3000, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; } }
             }
             finally { lock (_lock) _processing = null; Changed?.Invoke(); }
@@ -268,7 +283,7 @@ public sealed class CctvService : IDisposable
     private async Task ProcessImageAsync(ImageRow image, CancellationToken ct)
     {
         var regions = Store.WatcherRegions(image.Character);
-        if (regions.Count == 0) return;
+        if (regions.Count == 0) { Store.CompleteImage(image.Id, []); return; }   // 읽을 영역이 없으면 대기로 남겨 두지 않는다 (같은 이미지를 계속 집어 들게 된다)
         Store.MarkProcessing(image.Id);
         lock (_lock) { _processing = image.Filename; if (IsError) { Message = null; IsError = false; } }
         Changed?.Invoke();

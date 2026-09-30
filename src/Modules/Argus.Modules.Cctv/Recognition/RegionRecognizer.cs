@@ -38,13 +38,12 @@ public sealed class RegionRecognizer(VisionClient vision, Func<VisionSettings> s
         var sourcePath = Path.GetFullPath(Path.Combine(dir, $"{regionIndex}-{region.Kind.Db()}-source.png"));
 
         var crop = ImageOps.Crop(full, box.Left, box.Top, box.Width, box.Height);
-        var png = ImageOps.EncodePng(crop);
         // 크롭 파일은 도킹 숫자(아주 작음)만 남긴다: '최고 도킹 수' 근거로 보여 준다. 오버뷰·프로빙은 판정 근거 창에서 원본 스크린샷 위에 영역을 그려 보여 주므로 따로 저장하지 않는다.
         string? savedPath = null;
         if (region.Kind == RegionKind.Dock)
         {
             Directory.CreateDirectory(dir);
-            await File.WriteAllBytesAsync(sourcePath, png, ct).ConfigureAwait(false);
+            await File.WriteAllBytesAsync(sourcePath, ImageOps.EncodePng(crop), ct).ConfigureAwait(false);
             savedPath = sourcePath;
         }
 
@@ -59,7 +58,7 @@ public sealed class RegionRecognizer(VisionClient vision, Func<VisionSettings> s
         }
 
         ModelCalls++;
-        var answer = await vision.RecognizeAsync(region.Kind, png, settings(), ct).ConfigureAwait(false);
+        var answer = await vision.RecognizeAsync(region.Kind, ImageOps.EncodePng(crop), settings(), ct).ConfigureAwait(false);
         if (answer == null)
         {
             var why = vision.LastError ?? "비전 모델이 응답하지 않았습니다.";
@@ -69,13 +68,13 @@ public sealed class RegionRecognizer(VisionClient vision, Func<VisionSettings> s
         }
 
         var blank = new RegionFields();
-        var fields = TextRules.ShapeVisionFields(region.Kind, answer, blank, "");
+        var fields = TextRules.ShapeVisionFields(region.Kind, answer, blank);
         if (ReferenceEquals(fields, blank)) throw new RecognitionFailedException($"{region.Kind.Label()} 영역의 모델 응답이 기대한 모양이 아닙니다: {Short(answer.ToJsonString())}");
 
         var observation = new Observation
         {
             WatcherId = region.WatcherId, Kind = region.Kind, Confidence = 0.9,
-            Payload = new RegionPayload { RawText = answer.ToJsonString(), Fields = fields, RegionIndex = regionIndex, SourceBox = box, SourceCropPath = savedPath, Method = "vision" },
+            Payload = new RegionPayload { Fields = fields, RegionIndex = regionIndex, SourceBox = box, SourceCropPath = savedPath, Method = "vision" },
         };
         _last[key] = (hash, observation);
         return observation;

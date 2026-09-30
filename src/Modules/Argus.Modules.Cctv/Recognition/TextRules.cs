@@ -45,24 +45,6 @@ public static class TextRules
         return m.Groups[1].Value.Replace('0', 'O').Replace('1', 'I').Replace('5', 'S').Replace('8', 'B');
     }
 
-    /// <summary>OCR 원문 줄에서 그 이름 뒤에 나오는 속도 후보(쉼표·점이 있는 숫자)들 중 가장 큰 값.</summary>
-    internal static double? SpeedFromOcrLine(string rawText, string name)
-    {
-        var parts = CleanText(name).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0) return null;
-        var pattern = new Regex(string.Join(@"\s*", parts.Select(Regex.Escape)), RegexOptions.IgnoreCase);
-        foreach (var line in Regex.Split(rawText ?? "", @"\r?\n"))
-        {
-            var m = pattern.Match(line);
-            if (!m.Success) continue;
-            var suffix = line[(m.Index + m.Length)..];
-            var candidates = Regex.Matches(suffix, @"-?\d+(?:[,.]\d+)*").Select(t => t.Value).Where(t => t.IndexOfAny([',', '.']) >= 0)
-                .Select(t => ParseOverviewSpeed(t)).Where(v => v.HasValue).Select(v => v!.Value).ToList();
-            if (candidates.Count > 0) return candidates.Max();
-        }
-        return null;
-    }
-
     private static string S(JsonNode? n) => n switch { null => "", JsonValue v when v.TryGetValue<string>(out var s) => s, var o => o.ToString() };
 
     private static double? SpeedOf(JsonNode? n)
@@ -76,10 +58,9 @@ public static class TextRules
     }
 
     /// <summary>
-    /// 비전 모델의 JSON 응답을 영역 종류별 필드로 바꾼다. 응답이 없거나 모양이 틀리면 fallback(Tesseract 결과)을 그대로 돌려준다.
-    /// 속도: 모델이 "1,775,962"를 1.775962 처럼 작은 소수로 돌려줘도 OCR 원문 줄의 큰 속도로 바로잡는다.
+    /// 비전 모델의 JSON 응답을 영역 종류별 필드로 바꾼다. 응답이 없거나 모양이 틀리면 fallback 을 그대로 돌려준다.
     /// </summary>
-    public static RegionFields ShapeVisionFields(RegionKind kind, JsonObject? vision, RegionFields fallback, string rawText = "")
+    public static RegionFields ShapeVisionFields(RegionKind kind, JsonObject? vision, RegionFields fallback)
     {
         if (vision == null) return fallback;
 
@@ -100,11 +81,10 @@ public static class TextRules
             {
                 var modelSpeed = SpeedOf(r["speed"]);
                 var name = CleanText(S(r["name"]));
-                var ocrSpeed = SpeedFromOcrLine(rawText, name);
                 return new OverviewRow
                 {
                     Distance = CleanText(S(r["distance"])), Name = name, Ship = CleanText(S(r["ship"])), Corporation = CorporationOf(S(r["corporation"]), shipNames),
-                    Speed = ocrSpeed >= 10_000 && (modelSpeed == null || modelSpeed < 10_000) ? ocrSpeed : modelSpeed, Raw = "", Confidence = 0.9,
+                    Speed = modelSpeed, Raw = "", Confidence = 0.9,
                 };
             }).Where(r => r.Name.Length > 0).ToList();
             return Copy(fallback, f => { f.OverviewRows = overview; f.OverviewDetected = IsTrue(vision["visible"]) || overview.Count > 0; });

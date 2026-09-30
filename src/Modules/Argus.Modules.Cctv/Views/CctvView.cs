@@ -27,6 +27,7 @@ internal sealed class CctvView : UserControl
     private int _page;
     private string _signature = "\0";
     private bool _refreshQueued;
+    private (string, long) _lastStamp;
     private ViewData? _data;
 
     private sealed record ViewData(CctvStatus Status, List<Watcher> Watchers, List<EventRow> Events, List<CurrentObject> Objects, List<CurrentSignature> Signatures,
@@ -82,13 +83,17 @@ internal sealed class CctvView : UserControl
 
     private void Refresh(bool force = false)
     {
+        // 분석 상태도 저장소도 그대로면 아무것도 다시 읽지 않는다 (초당 한 번 도는 타이머가 공짜가 되도록).
+        var stamp = (_svc.ChangeStamp(), _svc.Store.Db.WriteCount);
+        if (!force && stamp == _lastStamp) return;
+        _lastStamp = stamp;
         ViewData d;
         try { d = Collect(); } catch (Exception ex) { Trace.WriteLine($"[CCTV] 화면 갱신 실패: {ex.Message}"); return; }
 
         var s = d.Status;
         var sig = string.Join("\u0002", s.State, s.Message, s.IsError, s.Folder, s.ImageCount, s.Counts, s.Processing, s.Model, s.ModelCalls, s.ReusedCalls,
             string.Join("|", d.Watchers.Select(w => $"{w.Id}:{w.Label}:{w.Character}:{w.WatchType}:{w.RegionVersion}:{w.Regions.Count}")),
-            d.Events.Count, d.Events.FirstOrDefault()?.Id, string.Join(",", d.Events.Take(30).Select(e => $"{e.Id}{e.Type}{e.ShipOrEmpty()}{EventPresentation.Verification(e)}")),
+            d.Events.Count, d.Events.FirstOrDefault()?.Id, string.Join(",", d.Events.Take(30).Select(e => $"{e.Id}{e.Type}{e.Ship}{EventPresentation.Verification(e)}")),
             string.Join("|", d.Objects.Select(o => $"{o.Character}{o.LastSeenAt}")), string.Join("|", d.Signatures.Select(x => $"{x.Id}{x.Name}{x.Group}")),
             string.Join("|", d.DockPeaks.Select(p => $"{p.WatcherId}{p.PeakCount}")), string.Join("|", d.Warnings.Select(w => $"{w.WatcherId}{w.Kind}")));
         if (!force && sig == _signature) return;
@@ -503,9 +508,4 @@ internal sealed class CctvView : UserControl
         var gr = UiKit.Dim(group, 11.5, null, false); gr.TextTrimming = TextTrimming.CharacterEllipsis; Grid.SetColumn(gr, 4); g.Children.Add(gr);
         return g;
     }
-}
-
-internal static class EventRowExt
-{
-    public static string ShipOrEmpty(this EventRow e) => e.Ship ?? "";
 }

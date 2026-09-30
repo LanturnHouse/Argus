@@ -76,13 +76,11 @@ public sealed class SourceBox
 
 public sealed class RegionPayload
 {
-    public string RawText { get; set; } = "";
     public RegionFields Fields { get; set; } = new();
     public int? RegionIndex { get; set; }
     public SourceBox? SourceBox { get; set; }
     public string? SourceCropPath { get; set; }
-    public string? OcrCropPath { get; set; }
-    /// <summary>이 영역을 읽은 방법: "tesseract" 또는 "vision".</summary>
+    /// <summary>이 영역을 읽은 방법: "vision"(모델이 읽음) 또는 "reused"(같은 그림이라 앞의 결과를 재사용).</summary>
     public string? Method { get; set; }
 }
 

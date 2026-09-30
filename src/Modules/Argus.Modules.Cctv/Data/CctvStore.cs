@@ -72,17 +72,6 @@ public sealed class CctvStore : IDisposable
 
     public void Dispose() => Db.Dispose();
 
-    // ---------- 설정 (키-값, JSON) ----------
-
-    public T? GetSetting<T>(string key)
-    {
-        var row = Db.One("SELECT value FROM settings WHERE key = ?", key);
-        return row == null ? default : CctvJson.Deserialize<T>(row.Str("value"));
-    }
-
-    public void SetSetting<T>(string key, T value) =>
-        Db.Exec("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP", key, CctvJson.Serialize(value));
-
     // ---------- 감시 눈깔 ----------
 
     public List<Watcher> ListWatchers()
@@ -239,11 +228,7 @@ public sealed class CctvStore : IDisposable
         });
     }
 
-    public void FailImage(long imageId, string message)
-    {
-        Db.Exec("UPDATE images SET processing_status = 'failed' WHERE id = ?", imageId);
-        SetSetting($"imageError:{imageId}", message);
-    }
+    public void FailImage(long imageId) => Db.Exec("UPDATE images SET processing_status = 'failed' WHERE id = ?", imageId);
 
     // ---------- 화면용 조회 ----------
 
@@ -344,6 +329,4 @@ public sealed class CctvStore : IDisposable
     }
 
     public string? ImagePath(long imageId) => Db.One("SELECT file_path FROM images WHERE id = ?", imageId)?.Str("file_path");
-
-    public string? ImageError(long imageId) => GetSetting<string>($"imageError:{imageId}");
 }

@@ -22,17 +22,6 @@ public static class ImageOps
         return new Bitmap32(px, src.PixelWidth, src.PixelHeight);
     }
 
-    /// <summary>파일 전체를 읽지 않고 이미지 크기만 읽는다. 읽을 수 없으면 null.</summary>
-    public static (int Width, int Height)? Size(string path)
-    {
-        try
-        {
-            var decoder = BitmapDecoder.Create(new Uri(Path.GetFullPath(path)), BitmapCreateOptions.DelayCreation | BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.None);
-            return (decoder.Frames[0].PixelWidth, decoder.Frames[0].PixelHeight);
-        }
-        catch { return null; }
-    }
-
     public static Bitmap32 Crop(Bitmap32 src, int left, int top, int width, int height)
     {
         var dst = new byte[width * height * 4];
@@ -50,12 +39,13 @@ public static class ImageOps
         return ms.ToArray();
     }
 
-    /// <summary>픽셀 내용의 64비트 해시(FNV-1a). 같은 화면 조각인지 빠르게 가리는 데 쓴다.</summary>
+    /// <summary>픽셀 내용의 64비트 해시(FNV-1a 변형). 같은 화면 조각인지 빠르게 가리는 데 쓴다.</summary>
     public static ulong Hash(Bitmap32 bmp)
     {
         ulong h = 14695981039346656037UL;
-        var b = bmp.Bgra;
-        for (int i = 0; i < b.Length; i++) { h ^= b[i]; h *= 1099511628211UL; }
+        var words = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ulong>(bmp.Bgra.AsSpan(0, bmp.Bgra.Length & ~7));   // 8바이트씩 섞어 바이트 단위보다 훨씬 빠르다
+        foreach (var w in words) { h ^= w; h *= 1099511628211UL; h ^= h >> 29; }
+        for (int i = words.Length * 8; i < bmp.Bgra.Length; i++) { h ^= bmp.Bgra[i]; h *= 1099511628211UL; }
         return h ^ ((ulong)bmp.Width << 32) ^ (uint)bmp.Height;
     }
 }
