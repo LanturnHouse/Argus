@@ -83,7 +83,7 @@ public static class Summaries
             if (string.IsNullOrEmpty(e.Character) || e.Type.StartsWith("signature_")) continue;
             LiveStatus? status = e.Type == "docked" ? LiveStatus.Docked
                 : e.Type is "warp_in" or "jump_in" or "undocked" or "appeared" or "covop_in" ? LiveStatus.Observed
-                : e.Type is "warp_out" or "jump_out" or "disappeared" or "covop_out" ? LiveStatus.Departed : null;
+                : e.Type is "jump_out" or "disappeared" or "covop_out" ? LiveStatus.Departed : null; // 워프아웃은 같은 성계 안의 이동이라 이탈로 세지 않는다
             if (status != null) Commit(e.Character!, status.Value, e.Time, e.Corporation, e.Ship, e.WatcherLabel ?? "미지정 눈깔");
         }
         return latest;

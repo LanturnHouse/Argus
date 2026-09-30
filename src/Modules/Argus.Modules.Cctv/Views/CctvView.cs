@@ -184,9 +184,9 @@ internal sealed class CctvView : UserControl
     {
         int Count(LiveStatus st) => d.Latest.Values.Count(x => x.Status == st);
         var grid = new UniformGrid { Rows = 1, Columns = 3 };
-        grid.Children.Add(StatCard("현재 도킹 확인", Count(LiveStatus.Docked), d.DockPeaks.Count > 0 ? $"최고 도킹 수 {d.DockPeaks[0].PeakCount}명" : "도킹 수 감지 대기", "도킹", d, LiveStatus.Docked, 0));
+        grid.Children.Add(StatCard("현재 도킹 확인", Count(LiveStatus.Docked), d.DockPeaks.Count > 0 ? (d.DockPeaks.Count > 1 ? $"최고 도킹 수 합계 {d.DockPeaks.Sum(p => p.PeakCount)}명 · 눈깔 {d.DockPeaks.Count}개" : $"최고 도킹 수 {d.DockPeaks[0].PeakCount}명") : "도킹 수 감지 대기", "도킹", d, LiveStatus.Docked, 0));
         grid.Children.Add(StatCard("감지 · 미도킹", Count(LiveStatus.Observed), "현재 위치 미확정", "감지", d, LiveStatus.Observed, 1));
-        grid.Children.Add(StatCard("성계 이탈", Count(LiveStatus.Departed), "워프·점프아웃 판정", "이탈", d, LiveStatus.Departed, 2));
+        grid.Children.Add(StatCard("성계 이탈", Count(LiveStatus.Departed), "점프아웃 판정 (워프아웃 제외)", "이탈", d, LiveStatus.Departed, 2));
         return grid;
     }
 
