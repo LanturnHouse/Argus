@@ -1,0 +1,484 @@
+using System.Diagnostics;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
+
+namespace Argus.Modules.Cctv;
+
+/// <summary>사이드바 'CCTV' 탭: 분석 켜기/끄기와 상태, 요약, 감시 눈깔, 감지 타임라인, 코퍼레이션 현황, 프로빙 변화.</summary>
+internal sealed class CctvView : UserControl
+{
+    private readonly CctvService _svc;
+    private readonly Border _analysisHost = new(), _warningHost = new(), _statsHost = new(), _watchersHost = new(), _corpHost = new(), _sigHost = new();
+    private readonly StackPanel _timelineList = new();
+    private readonly TextBox _search = new() { Width = 240, ToolTip = "캐릭터 · 함선 · 콥 티커 검색" };
+    private readonly TextBlock _searchHint = new() { Text = "캐릭터 · 함선 · 콥 티커 검색", FontSize = 12, Foreground = UiKit.DimBrush, IsHitTestVisible = false, Margin = new Thickness(11, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+    private readonly WrapPanel _categoryRow = new(), _watcherRow = new(), _searchModeRow = new();
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(1000) };
+    private readonly HashSet<EventCategory> _categories = [.. Enum.GetValues<EventCategory>()];
+    private readonly HashSet<string> _searchFields = ["name", "ship", "corp"];
+    private string _watcherFilter = "";
+    private bool _exact;
+    private string _signature = "\0";
+    private bool _refreshQueued;
+    private ViewData? _data;
+
+    private sealed record ViewData(CctvStatus Status, List<Watcher> Watchers, List<EventRow> Events, List<CurrentObject> Objects, List<CurrentSignature> Signatures,
+        List<DockPeak> DockPeaks, List<RegionWarning> Warnings, Dictionary<string, LatestState> Latest, List<CorpGroup> Corps, Func<string?, string> Canonical);
+
+    public CctvView(CctvService svc)
+    {
+        _svc = svc;
+        var root = new StackPanel();
+        root.Children.Add(UiKit.Text("CCTV", 24, FontWeights.Bold));
+        root.Children.Add(UiKit.Dim("EVE 스크린샷(화면 감시 캡처가 저장한 CCTV 파일)의 오버뷰 · 프로빙 창 · 도킹 숫자를 비전 모델로 읽어 함선의 출입과 도킹, 시그니처 변화를 판정합니다.", 12, new Thickness(0, 4, 0, 16)));
+        root.Children.Add(_analysisHost);
+        root.Children.Add(_warningHost);
+        root.Children.Add(_statsHost);
+        root.Children.Add(_watchersHost);
+        root.Children.Add(BuildTimelineCard());
+
+        var two = new Grid();
+        two.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 300 });
+        two.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        two.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.4, GridUnitType.Star), MinWidth = 380 });
+        Grid.SetColumn(_corpHost, 0); Grid.SetColumn(_sigHost, 2);
+        two.Children.Add(_corpHost); two.Children.Add(_sigHost);
+        root.Children.Add(two);
+
+        Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = root, Padding = new Thickness(0, 0, 12, 0) };
+
+        _search.TextChanged += (_, _) => { _searchHint.Visibility = _search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; RebuildTimeline(); };
+        _svc.Changed += OnServiceChanged;
+        _timer.Tick += (_, _) => Refresh();
+        Loaded += (_, _) => { Refresh(force: true); _timer.Start(); };
+        Unloaded += (_, _) => _timer.Stop();
+    }
+
+    private void OnServiceChanged()
+    {
+        if (_refreshQueued) return;
+        _refreshQueued = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, () => { _refreshQueued = false; Refresh(); });
+    }
+
+    // ---------- 데이터 모으기 ----------
+
+    private ViewData Collect()
+    {
+        var store = _svc.Store;
+        var events = store.Events(_svc.Settings.TimelineLimit);
+        var objects = store.CurrentObjects();
+        var canonical = Summaries.CorporationCanonicalizer(events, objects);
+        return new ViewData(_svc.Status(), store.ListWatchers(), events, objects, store.CurrentSignatures(), store.DockPeaks(), store.RegionWarnings(),
+            Summaries.BuildLatestStates(events, objects, canonical), Summaries.BuildCorpGroups(events, objects, canonical), canonical);
+    }
+
+    private void Refresh(bool force = false)
+    {
+        ViewData d;
+        try { d = Collect(); } catch (Exception ex) { Trace.WriteLine($"[CCTV] 화면 갱신 실패: {ex.Message}"); return; }
+
+        var s = d.Status;
+        var sig = string.Join("\u0002", s.State, s.Message, s.IsError, s.Folder, s.ImageCount, s.Counts, s.Processing, s.Model, s.ModelCalls, s.ReusedCalls,
+            string.Join("|", d.Watchers.Select(w => $"{w.Id}:{w.Label}:{w.Character}:{w.WatchType}:{w.RegionVersion}:{w.Regions.Count}")),
+            d.Events.Count, d.Events.FirstOrDefault()?.Id, string.Join(",", d.Events.Take(30).Select(e => $"{e.Id}{e.Type}{e.ShipOrEmpty()}{EventPresentation.Verification(e)}")),
+            string.Join("|", d.Objects.Select(o => $"{o.Character}{o.LastSeenAt}")), string.Join("|", d.Signatures.Select(x => $"{x.Id}{x.Name}{x.Group}")),
+            string.Join("|", d.DockPeaks.Select(p => $"{p.WatcherId}{p.PeakCount}")), string.Join("|", d.Warnings.Select(w => $"{w.WatcherId}{w.Kind}")));
+        if (!force && sig == _signature) return;
+        _signature = sig; _data = d;
+
+        _analysisHost.Child = BuildAnalysisCard(d);
+        _warningHost.Child = BuildWarnings(d);
+        _statsHost.Child = BuildStats(d);
+        _watchersHost.Child = BuildWatchers(d);
+        RebuildFilters(d);
+        RebuildTimeline();
+        _corpHost.Child = BuildCorps(d);
+        _sigHost.Child = BuildSignatures(d);
+    }
+
+    // ---------- 분석 상태 ----------
+
+    private UIElement BuildAnalysisCard(ViewData d)
+    {
+        var s = d.Status;
+        var (label, bg, fg) = s.State switch
+        {
+            AnalysisState.Working => ("분석 중", UiKit.AccentSoft, UiKit.AccentText),
+            AnalysisState.Loading => ("모델 올리는 중…", UiKit.WarnBg, UiKit.Warn),
+            AnalysisState.Idle => ("켜짐 · 읽을 이미지 없음", UiKit.GoodBg, UiKit.Good),
+            _ => ("분석 꺼짐", UiKit.NeutralBg, UiKit.NeutralText),
+        };
+
+        var top = new DockPanel();
+        var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        right.Children.Add(Counter("대기", s.Counts.Pending + s.Counts.Processing, s.Counts.Pending > 0 ? UiKit.Warn : UiKit.NeutralText));
+        right.Children.Add(Counter("완료", s.Counts.Processed, UiKit.Good));
+        right.Children.Add(Counter("실패", s.Counts.Failed, s.Counts.Failed > 0 ? UiKit.Bad : UiKit.NeutralText));
+        DockPanel.SetDock(right, Dock.Right);
+        top.Children.Add(right);
+
+        var left = new StackPanel { Orientation = Orientation.Horizontal };
+        left.Children.Add(UiKit.Chip(label, bg, fg, null, new Thickness(0, 0, 12, 0)));
+        var toggle = s.State == AnalysisState.Off
+            ? UiKit.Button("분석 켜기", () => _ = _svc.EnableAsync(), "PrimaryButton")
+            : UiKit.Button("분석 끄기", () => _ = _svc.DisableAsync());
+        toggle.IsEnabled = s.State is AnalysisState.Off or AnalysisState.Idle or AnalysisState.Working;
+        left.Children.Add(toggle);
+        left.Children.Add(UiKit.Dim($"모델 {s.Model}", 12, new Thickness(4, 0, 0, 0), false));
+        top.Children.Add(left);
+
+        var body = new StackPanel();
+        body.Children.Add(top);
+        if (!string.IsNullOrEmpty(s.Message)) body.Children.Add(UiKit.Text(s.Message!, 12, FontWeights.Normal, s.IsError ? UiKit.Bad : UiKit.Warn, new Thickness(0, 10, 0, 0), wrap: true));
+        else if (s.State == AnalysisState.Off)
+            body.Children.Add(UiKit.Dim("분석을 켜면 읽을 이미지가 있을 때만 비전 모델을 올리고, 모두 읽으면 내립니다. Argus 를 켠다고 모델이 저절로 올라가지는 않습니다.", 12, new Thickness(0, 10, 0, 0)));
+        else if (s.State == AnalysisState.Working && s.Processing != null)
+            body.Children.Add(UiKit.Dim($"읽는 중: {s.Processing}", 12, new Thickness(0, 10, 0, 0)));
+
+        var folder = new DockPanel { Margin = new Thickness(0, 10, 0, 0) };
+        var open = UiKit.Button("폴더 열기", () => { if (Directory.Exists(s.Folder)) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{s.Folder}\"") { UseShellExecute = true }); });
+        open.Margin = new Thickness(8, 0, 0, 0); open.Padding = new Thickness(10, 3, 10, 3);
+        DockPanel.SetDock(open, Dock.Right);
+        folder.Children.Add(open);
+        folder.Children.Add(UiKit.Dim($"이미지 폴더: {s.Folder} · 감시 중인 캐릭터의 이미지 {s.ImageCount:N0}장" + (s.ModelCalls + s.ReusedCalls > 0 ? $" · 모델 호출 {s.ModelCalls:N0}회(변화 없는 화면 {s.ReusedCalls:N0}회는 재사용)" : ""), 12, null, false));
+        body.Children.Add(folder);
+        return UiKit.Card(body);
+    }
+
+    private static UIElement Counter(string label, int value, Brush color)
+    {
+        var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 0, 0, 0) };
+        sp.Children.Add(UiKit.Dim(label, 12, new Thickness(0, 0, 6, 0), false));
+        sp.Children.Add(UiKit.Text(value.ToString("N0"), 16, FontWeights.Bold, color));
+        return sp;
+    }
+
+    private UIElement BuildWarnings(ViewData d)
+    {
+        var box = new StackPanel();
+        var review = d.Watchers.FirstOrDefault(w => w.RegionVersion < 2);
+        var warning = d.Warnings.FirstOrDefault();
+        string? title = null, note = null; string? watcherId = null;
+        if (review != null) { title = $"{review.Label} 인식 영역을 다시 확인해주세요."; note = "저장하면 이 캐릭터의 이미지를 처음부터 다시 분석합니다."; watcherId = review.Id; }
+        else if (warning != null) { title = $"{warning.WatcherLabel} · 영역 재설정 필요"; note = $"{warning.Message} UI 배율이나 창 위치가 바뀌었다면 영역을 다시 지정해주세요."; watcherId = warning.WatcherId; }
+        if (title == null) return box;
+
+        var inner = new StackPanel();
+        inner.Children.Add(UiKit.Text(title, 13, FontWeights.SemiBold, UiKit.Warn));
+        inner.Children.Add(UiKit.Dim(note!, 12, new Thickness(0, 2, 0, 0)));
+        var row = new RowButton(inner) { Background = UiKit.WarnBg, Padding = new Thickness(14, 10, 14, 10), Margin = new Thickness(0, 0, 0, 14), CornerRadius = new CornerRadius(10) };
+        row.MouseEnter += (_, _) => row.Background = UiKit.WarnBg; row.MouseLeave += (_, _) => row.Background = UiKit.WarnBg;
+        row.Clicked += () => EditWatcher(watcherId!);
+        return row;
+    }
+
+    // ---------- 요약 ----------
+
+    private UIElement BuildStats(ViewData d)
+    {
+        int Count(LiveStatus st) => d.Latest.Values.Count(x => x.Status == st);
+        var grid = new UniformGrid { Rows = 1, Columns = 3 };
+        grid.Children.Add(StatCard("현재 도킹 확인", Count(LiveStatus.Docked), d.DockPeaks.Count > 0 ? $"최고 도킹 수 {d.DockPeaks[0].PeakCount}명" : "도킹 수 감지 대기", "도킹", d, LiveStatus.Docked, 0));
+        grid.Children.Add(StatCard("감지 · 미도킹", Count(LiveStatus.Observed), "현재 위치 미확정", "감지", d, LiveStatus.Observed, 1));
+        grid.Children.Add(StatCard("성계 이탈", Count(LiveStatus.Departed), "워프·점프아웃 판정", "이탈", d, LiveStatus.Departed, 2));
+        return grid;
+    }
+
+    private UIElement StatCard(string title, int value, string note, string kind, ViewData d, LiveStatus status, int index)
+    {
+        var sp = new StackPanel();
+        sp.Children.Add(UiKit.Dim(title, 12, null, false));
+        sp.Children.Add(UiKit.Text(value.ToString(), 30, FontWeights.Bold, null, new Thickness(0, 4, 0, 2)));
+        sp.Children.Add(UiKit.Dim(note, 12, null, false));
+        sp.Children.Add(UiKit.Text("상세 보기 ›", 11.5, FontWeights.SemiBold, UiKit.AccentText, new Thickness(0, 8, 0, 0)));
+        var row = new RowButton(sp) { Padding = new Thickness(16, 14, 16, 12), Background = UiKit.Panel, Margin = new Thickness(0, 0, index == 2 ? 0 : 10, 14), CornerRadius = new CornerRadius(12), BorderBrush = UiKit.Line, BorderThickness = new Thickness(1) };
+        row.MouseEnter += (_, _) => row.Background = UiKit.Panel2; row.MouseLeave += (_, _) => row.Background = UiKit.Panel;
+        row.Clicked += () => SummaryWindow.ShowFor(Window.GetWindow(this), _svc, status, d.Latest.Values.Where(x => x.Status == status).OrderByDescending(x => x.Time).ToList(), d.DockPeaks);
+        return row;
+    }
+
+    // ---------- 감시 눈깔 ----------
+
+    private UIElement BuildWatchers(ViewData d)
+    {
+        var box = new StackPanel();
+        var head = new DockPanel();
+        var add = UiKit.Button("눈깔 추가", () => NewWatcher(), "PrimaryButton");
+        add.Margin = new Thickness(0);
+        DockPanel.SetDock(add, Dock.Right);
+        head.Children.Add(add);
+        var titleBox = new StackPanel();
+        titleBox.Children.Add(UiKit.SectionHead("감시 눈깔"));
+        titleBox.Children.Add(UiKit.Dim("캐릭터 하나가 보는 화면에서 오버뷰 · 프로빙 창 · 도킹 숫자 영역을 지정한 감시 단위입니다.", 12));
+        head.Children.Add(titleBox);
+        box.Children.Add(head);
+
+        if (d.Watchers.Count == 0)
+        {
+            box.Children.Add(UiKit.Dim("아직 등록한 눈깔이 없습니다. '눈깔 추가'로 캐릭터와 인식 영역을 지정하면 그 캐릭터의 스크린샷을 분석합니다.", 12, new Thickness(0, 12, 0, 0)));
+            return UiKit.Card(box);
+        }
+
+        var list = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        foreach (var w in d.Watchers)
+        {
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+            var remove = UiKit.Button("제거", () => RemoveWatcher(w), "GhostButton"); remove.Margin = new Thickness(6, 0, 0, 0); remove.Padding = new Thickness(10, 4, 10, 4);
+            var edit = UiKit.Button("영역 수정", () => EditWatcher(w.Id)); edit.Margin = new Thickness(0); edit.Padding = new Thickness(10, 4, 10, 4);
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            buttons.Children.Add(edit); buttons.Children.Add(remove);
+            DockPanel.SetDock(buttons, Dock.Right);
+            row.Children.Add(buttons);
+
+            var live = w.Enabled && w.RegionVersion >= 2;
+            var info = new StackPanel();
+            var line1 = new StackPanel { Orientation = Orientation.Horizontal };
+            line1.Children.Add(new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Fill = live ? UiKit.Good : UiKit.Warn, Margin = new Thickness(0, 1, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+            line1.Children.Add(UiKit.Text(w.Label, 14, FontWeights.SemiBold));
+            line1.Children.Add(UiKit.Chip(w.WatchType.Label(), UiKit.NeutralBg, UiKit.NeutralText, null, new Thickness(10, 0, 0, 0)));
+            info.Children.Add(line1);
+            info.Children.Add(UiKit.Dim($"{w.Character} · 인식 영역 {w.Regions.Count}개 ({string.Join(" · ", w.Regions.GroupBy(r => r.Kind).Select(g => $"{g.Key.Label()} {g.Count()}"))})" + (live ? "" : " · 영역 재설정 필요"), 12, new Thickness(16, 2, 0, 0)));
+            row.Children.Add(info);
+            list.Children.Add(new Border { Child = row, Padding = new Thickness(8, 8, 8, 8), Background = UiKit.Panel2, CornerRadius = new CornerRadius(8), Margin = new Thickness(0, 0, 0, 6) });
+        }
+        box.Children.Add(list);
+        return UiKit.Card(box);
+    }
+
+    private void NewWatcher() => WatcherWizard.ShowFor(Window.GetWindow(this), _svc, null);
+    private void EditWatcher(string id) => WatcherWizard.ShowFor(Window.GetWindow(this), _svc, _svc.Store.ListWatchers().FirstOrDefault(w => w.Id == id));
+
+    private void RemoveWatcher(Watcher w)
+    {
+        var answer = MessageBox.Show($"{w.Label} ({w.Character}) 감시를 제거할까요?\n\n이 눈깔의 이벤트, 현재 대상, 시그니처 기록이 초기화됩니다.\nCCTV 폴더의 원본 PNG 는 삭제하지 않습니다. 같은 캐릭터를 다시 등록하면 폴더에 남은 스크린샷을 처음부터 다시 분석합니다.",
+            "감시 눈깔 제거", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (answer == MessageBoxResult.Yes) _svc.DeleteWatcher(w.Id);
+    }
+
+    // ---------- 타임라인 ----------
+
+    private UIElement BuildTimelineCard()
+    {
+        var box = new StackPanel();
+        box.Children.Add(UiKit.SectionHead("감지 타임라인"));
+        box.Children.Add(UiKit.Dim("속도 변화와 화면 이탈을 결합한 판정입니다. 줄을 누르면 판정 근거(원본 이미지, 이전 프레임, 인식 영역)를 볼 수 있습니다.", 12));
+        _categoryRow.Margin = new Thickness(0, 10, 0, 0);
+        box.Children.Add(_categoryRow);
+        box.Children.Add(_watcherRow);
+
+        var searchRow = new WrapPanel();
+        var searchBox = new Grid { Margin = new Thickness(0, 0, 10, 6) };
+        searchBox.Children.Add(_search); searchBox.Children.Add(_searchHint);
+        searchRow.Children.Add(searchBox);
+        searchRow.Children.Add(_searchModeRow);
+        box.Children.Add(searchRow);
+
+        foreach (var c in Enum.GetValues<EventCategory>())
+        {
+            var chip = new FilterChip(EventPresentation.CategoryLabel(c), true);
+            chip.Toggled += on => { if (on) _categories.Add(c); else _categories.Remove(c); RebuildTimeline(); };
+            _categoryRow.Children.Add(chip);
+        }
+        var partial = new FilterChip("일부일치", true); var exact = new FilterChip("완전일치", false);
+        partial.Toggled += _ => { _exact = false; partial.SetActive(true); exact.SetActive(false); RebuildTimeline(); };
+        exact.Toggled += _ => { _exact = true; exact.SetActive(true); partial.SetActive(false); RebuildTimeline(); };
+        _searchModeRow.Children.Add(partial); _searchModeRow.Children.Add(exact);
+        foreach (var (key, label) in new[] { ("name", "캐릭터"), ("ship", "함선"), ("corp", "콥 티커") })
+        {
+            var chip = new FilterChip(label, true);
+            chip.Toggled += on =>
+            {
+                if (on) _searchFields.Add(key);
+                else if (_searchFields.Count > 1) _searchFields.Remove(key);
+                else chip.SetActive(true);   // 검색 대상은 최소 하나는 남긴다
+                RebuildTimeline();
+            };
+            _searchModeRow.Children.Add(chip);
+        }
+
+        _timelineList.Margin = new Thickness(0, 6, 0, 0);
+        box.Children.Add(_timelineList);
+        return UiKit.Card(box);
+    }
+
+    private void RebuildFilters(ViewData d)
+    {
+        _watcherRow.Children.Clear();
+        if (d.Watchers.Count < 2) { _watcherFilter = ""; return; }
+        foreach (var label in new[] { "" }.Concat(d.Watchers.Select(w => w.Label)))
+        {
+            var chip = new FilterChip(label.Length == 0 ? "전체" : label, _watcherFilter == label);
+            var captured = label;
+            chip.Toggled += _ => { _watcherFilter = captured; RebuildFilters(_data!); RebuildTimeline(); };
+            _watcherRow.Children.Add(chip);
+        }
+    }
+
+    private static string Norm(string? v) => System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace((v ?? "").ToLowerInvariant().Replace("[", "").Replace("]", ""), @"\*+$", ""), @"\s+", " ").Trim();
+
+    private bool Matches(EventRow e, Func<string?, string> canonical)
+    {
+        var needle = Norm(_search.Text);
+        if (needle.Length == 0) return true;
+        bool Hit(string? v) { var h = Norm(v); return _exact ? h == needle : h.Contains(needle); }
+        return (_searchFields.Contains("name") && Hit(e.Character)) || (_searchFields.Contains("ship") && Hit(e.Ship)) || (_searchFields.Contains("corp") && Hit(e.Corporation is null ? null : canonical(e.Corporation)));
+    }
+
+    private void RebuildTimeline()
+    {
+        _timelineList.Children.Clear();
+        if (_data == null) return;
+        var d = _data;
+        var shown = d.Events
+            .Where(e => _watcherFilter.Length == 0 || e.WatcherLabel == _watcherFilter)
+            .Where(e => _categories.Contains(EventPresentation.Category(e.Type)))
+            .Where(e => Matches(e, d.Canonical)).ToList();
+
+        if (shown.Count == 0)
+        {
+            var searching = Norm(_search.Text).Length > 0;
+            _timelineList.Children.Add(UiKit.Dim(_categories.Count == 0 ? "표시할 항목을 선택해주세요. 위의 분류 버튼으로 여러 항목을 함께 볼 수 있습니다."
+                : searching ? $"검색 결과가 없습니다. 현재 조건 안에서 \"{_search.Text.Trim()}\"을(를) 찾지 못했습니다."
+                : d.Events.Count == 0 ? "아직 판정된 이벤트가 없습니다. 분석을 켜고 인식 영역을 확인하면 폴더 이미지를 시간순으로 분석합니다." : "선택한 조건의 기록이 없습니다.", 12, new Thickness(0, 14, 0, 6)));
+            return;
+        }
+
+        foreach (var e in shown) _timelineList.Children.Add(TimelineRow(e, d));
+    }
+
+    private UIElement TimelineRow(EventRow e, ViewData d)
+    {
+        var g = new Grid();
+        foreach (var w in new[] { 70.0, 108.0, -1, 76.0, 120.0, 70.0 })
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = w < 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
+
+        var time = UiKit.Dim(Summaries.Time(e.Time), 12, null, false); Grid.SetColumn(time, 0); g.Children.Add(time);
+
+        var typeBox = new StackPanel { Orientation = Orientation.Horizontal };
+        typeBox.Children.Add(UiKit.TintChip(EventPresentation.Label(e.Type), EventPresentation.Color(e.Type), EventPresentation.Rule(e)));
+        Grid.SetColumn(typeBox, 1); g.Children.Add(typeBox);
+
+        var main = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        var nameLine = new StackPanel { Orientation = Orientation.Horizontal };
+        nameLine.Children.Add(UiKit.Text(e.Type.StartsWith("signature_") ? (e.Character ?? "---") : (e.Character ?? "미확인 대상"), 13.5, FontWeights.SemiBold));
+        if (EventPresentation.Verification(e) is { } v) nameLine.Children.Add(UiKit.Chip(v, v == "확정" ? UiKit.GoodBg : UiKit.WarnBg, v == "확정" ? UiKit.Good : UiKit.Warn, null, new Thickness(8, 0, 0, 0)));
+        main.Children.Add(nameLine);
+        main.Children.Add(UiKit.Dim(EventPresentation.Detail(e), 12, new Thickness(0, 1, 0, 0), false));
+        Grid.SetColumn(main, 2); g.Children.Add(main);
+
+        var corp = UiKit.Text(e.Corporation is { Length: > 0 } c ? $"[{d.Canonical(c)}]" : "—", 12.5, FontWeights.SemiBold, UiKit.AccentText); Grid.SetColumn(corp, 3); g.Children.Add(corp);
+        var src = UiKit.Dim(e.WatcherLabel ?? "미지정 눈깔", 12, null, false); src.TextTrimming = TextTrimming.CharacterEllipsis; Grid.SetColumn(src, 4); g.Children.Add(src);
+        var conf = UiKit.Dim($"인식 {Math.Round((e.Confidence ?? 0) * 100)}%", 11.5, null, false); Grid.SetColumn(conf, 5); g.Children.Add(conf);
+
+        var row = new RowButton(g);
+        row.Clicked += () => EvidenceWindow.ShowFor(Window.GetWindow(this), _svc, e, d.Canonical);
+        return row;
+    }
+
+    // ---------- 코퍼레이션 ----------
+
+    private UIElement BuildCorps(ViewData d)
+    {
+        var box = new StackPanel();
+        box.Children.Add(UiKit.SectionHead("코퍼레이션별 전력 현황"));
+        box.Children.Add(UiKit.Dim("도킹 확인과 감지 · 미도킹 대상 집계", 12));
+        if (d.Corps.Count == 0)
+        {
+            box.Children.Add(UiKit.Dim("오버뷰에서 콥 티커가 읽히면 이곳에 자동으로 집계됩니다.", 12, new Thickness(0, 14, 0, 4)));
+            return UiKit.Card(box);
+        }
+        var list = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        foreach (var corp in d.Corps)
+        {
+            var g = new Grid();
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var info = new StackPanel();
+            var nameLine = new StackPanel { Orientation = Orientation.Horizontal };
+            nameLine.Children.Add(UiKit.Text(corp.Name, 14, FontWeights.SemiBold));
+            nameLine.Children.Add(UiKit.Dim(corp.Ticker, 12, new Thickness(6, 0, 0, 0), false));
+            info.Children.Add(nameLine);
+            info.Children.Add(UiKit.Dim($"도킹 {corp.Docked} · 미도킹 {corp.Observed} · 함선 {corp.Ships.Sum(s => s.Count)}대", 12, new Thickness(0, 2, 0, 0), false));
+            var count = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
+            count.Children.Add(UiKit.Text(corp.Detected.ToString(), 20, FontWeights.Bold));
+            count.Children.Add(UiKit.Dim("현재 인원", 11, null, false));
+            Grid.SetColumn(count, 1);
+            g.Children.Add(info); g.Children.Add(count);
+            var row = new RowButton(g) { Padding = new Thickness(10, 9, 10, 9) };
+            row.Clicked += () => CorpWindow.ShowFor(Window.GetWindow(this), corp);
+            list.Children.Add(row);
+        }
+        box.Children.Add(list);
+        return UiKit.Card(box, margin: new Thickness(0, 0, 0, 14));
+    }
+
+    // ---------- 프로빙 ----------
+
+    private UIElement BuildSignatures(ViewData d)
+    {
+        var box = new StackPanel();
+        box.Children.Add(UiKit.SectionHead("프로빙 변화"));
+        var latest = d.Signatures.Select(s => s.LastSeenAt).Concat(d.Events.Where(e => e.Type.StartsWith("signature_")).Select(e => e.Time)).OrderBy(x => x).LastOrDefault();
+        var watcher = d.Signatures.FirstOrDefault()?.WatcherLabel ?? d.Events.FirstOrDefault(e => e.Type.StartsWith("signature_"))?.WatcherLabel ?? "프로빙 창을 지정한 눈깔";
+        box.Children.Add(UiKit.Dim($"{watcher} · 마지막 갱신 {(latest != null ? Summaries.Time(latest) : "대기 중")}", 12));
+
+        var cols = new Grid { Margin = new Thickness(0, 10, 0, 0) };
+        cols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        cols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+        cols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var current = new StackPanel();
+        current.Children.Add(ColumnTitle("현재 존재하는 시그니처", d.Signatures.Count.ToString()));
+        if (d.Signatures.Count == 0) current.Children.Add(UiKit.Dim("현재 인식된 시그니처 없음", 12, new Thickness(0, 8, 0, 0)));
+        foreach (var s in d.Signatures)
+        {
+            var (name, group, unscanned) = EventPresentation.SignatureFields(s.Name, s.Group);
+            current.Children.Add(SignatureRow(Summaries.Time(s.LastSeenAt)[..5], s.Id, name, group, unscanned, null));
+        }
+        Grid.SetColumn(current, 0); cols.Children.Add(current);
+
+        var history = new StackPanel();
+        var sigEvents = d.Events.Where(e => e.Type.StartsWith("signature_")).ToList();
+        history.Children.Add(ColumnTitle("생성 · 소멸 기록", "전체 기록"));
+        if (sigEvents.Count == 0) history.Children.Add(UiKit.Dim("생성·소멸 기록 없음", 12, new Thickness(0, 8, 0, 0)));
+        foreach (var e in sigEvents.Take(40))
+        {
+            var (name, group, unscanned) = EventPresentation.SignatureFields(e.Details["name"]?.ToString(), e.Details["group"]?.ToString());
+            history.Children.Add(SignatureRow(Summaries.Time(e.Time)[..5], e.Character ?? "---", name, group, unscanned, e.Type == "signature_created"));
+        }
+        Grid.SetColumn(history, 2); cols.Children.Add(history);
+        box.Children.Add(cols);
+        return UiKit.Card(box, margin: new Thickness(0, 0, 0, 14));
+    }
+
+    private static UIElement ColumnTitle(string title, string right)
+    {
+        var dock = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var r = UiKit.Text(right, 12, FontWeights.SemiBold, UiKit.AccentText); DockPanel.SetDock(r, Dock.Right);
+        dock.Children.Add(r); dock.Children.Add(UiKit.Text(title, 12.5, FontWeights.SemiBold, UiKit.NeutralText));
+        return dock;
+    }
+
+    private static UIElement SignatureRow(string time, string id, string name, string group, bool unscanned, bool? created)
+    {
+        var g = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+        foreach (var w in new[] { 18.0, 44.0, 46.0, -1, 76.0 }) g.ColumnDefinitions.Add(new ColumnDefinition { Width = w < 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
+        var sign = created == null ? "" : created == true ? "+" : "−";
+        var t = UiKit.Text(sign, 14, FontWeights.Bold, created == true ? UiKit.Good : UiKit.Bad); Grid.SetColumn(t, 0); g.Children.Add(t);
+        var tm = UiKit.Dim(time, 12, null, false); Grid.SetColumn(tm, 1); g.Children.Add(tm);
+        var idt = UiKit.Text(id, 12.5, FontWeights.SemiBold); Grid.SetColumn(idt, 2); g.Children.Add(idt);
+        var nm = UiKit.Text(unscanned ? "코즈믹 시그니처 (미스캔)" : name, 12.5, FontWeights.Normal, null, null); nm.TextTrimming = TextTrimming.CharacterEllipsis; Grid.SetColumn(nm, 3); g.Children.Add(nm);
+        var gr = UiKit.Dim(group, 11.5, null, false); gr.TextTrimming = TextTrimming.CharacterEllipsis; Grid.SetColumn(gr, 4); g.Children.Add(gr);
+        return g;
+    }
+}
+
+internal static class EventRowExt
+{
+    public static string ShipOrEmpty(this EventRow e) => e.Ship ?? "";
+}

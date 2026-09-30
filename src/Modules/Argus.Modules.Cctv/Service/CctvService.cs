@@ -294,6 +294,21 @@ public sealed class CctvService : IDisposable
         _ctx.Events.Publish(new CctvEventsDetected([.. fresh.Select(e => new CctvDetection(e.Id, e.Type, e.Time, e.Character, e.Corporation, e.Ship, e.WatcherLabel ?? ""))]));
     }
 
+    // ---------- 눈깔 등록에 쓰는 정보 ----------
+
+    /// <summary>등록할 수 있는 캐릭터: 폴더의 파일 이름에서 찾은 캐릭터 + 지금 실행 중인 클라이언트 (이름, 이미지 수, 가장 최근 촬영 시각).</summary>
+    public List<(string Name, int Images, string Latest)> KnownCharacters()
+    {
+        var list = Store.CharacterStats(ImageFolder).Select(s => (s.Name, s.ImageCount, s.LatestCaptureAt)).ToList();
+        foreach (var c in _ctx.Clients.Current.Select(c => c.Character).Distinct(StringComparer.OrdinalIgnoreCase))
+            if (!list.Any(x => string.Equals(x.Name, c, StringComparison.OrdinalIgnoreCase))) list.Add((c, 0, ""));
+        return list;
+    }
+
+    /// <summary>이 캐릭터의 가장 최근 스크린샷 id (영역 지정에 쓴다). 없으면 null.</summary>
+    public long? LatestImageId(string character) =>
+        Store.CharacterStats(ImageFolder).FirstOrDefault(s => s.Name == character) is { LatestImageId: > 0 } st ? st.LatestImageId : null;
+
     // ---------- 감시 눈깔 관리 ----------
 
     public void SaveWatcher(Watcher watcher)
@@ -307,6 +322,16 @@ public sealed class CctvService : IDisposable
     {
         Store.DeleteWatcher(id);
         _recognizer.ResetReuse();
+        Changed?.Invoke();
+    }
+
+    /// <summary>분석 기록(이벤트·현재 상태·이미지 목록)을 모두 지우고 폴더를 처음부터 다시 등록한다. 분석이 켜져 있어도 안전하게 멈췄다 이어간다.</summary>
+    public void ResetAll()
+    {
+        Store.ResetDerivedData();
+        _recognizer.ResetReuse();
+        try { if (Directory.Exists(CropRoot)) Directory.Delete(CropRoot, true); } catch { /* 나중에 다시 */ }
+        _scanNow = true;
         Changed?.Invoke();
     }
 
