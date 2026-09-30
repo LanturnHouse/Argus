@@ -23,6 +23,8 @@ internal sealed class CctvView : UserControl
     private readonly HashSet<EventCategory> _categories = [.. Enum.GetValues<EventCategory>()];
     private string _watcherFilter = "";
     private bool _exact;
+    private const int PageSize = 20;
+    private int _page;
     private string _signature = "\0";
     private bool _refreshQueued;
     private ViewData? _data;
@@ -52,7 +54,7 @@ internal sealed class CctvView : UserControl
 
         Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = root, Padding = new Thickness(0, 0, 12, 0) };
 
-        _search.TextChanged += (_, _) => { _searchHint.Visibility = _search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; RebuildTimeline(); };
+        _search.TextChanged += (_, _) => { _searchHint.Visibility = _search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; FilterChanged(); };
         _svc.Changed += OnServiceChanged;
         _timer.Tick += (_, _) => Refresh();
         Loaded += (_, _) => { Refresh(force: true); _timer.Start(); };
@@ -274,7 +276,7 @@ internal sealed class CctvView : UserControl
         DockPanel.SetDock(_watcherCombo, Dock.Right);
         var exact = new FilterChip("정확히 일치", false, "꺼 두면 입력한 글자가 들어 있는 것을 모두 찾습니다");
         exact.Margin = new Thickness(8, 0, 0, 0);
-        exact.Toggled += on => { _exact = on; RebuildTimeline(); };
+        exact.Toggled += on => { _exact = on; FilterChanged(); };
         DockPanel.SetDock(exact, Dock.Right);
         bar.Children.Add(_watcherCombo); bar.Children.Add(exact);
         var searchBox = new Grid();
@@ -287,7 +289,7 @@ internal sealed class CctvView : UserControl
         {
             var chip = new FilterChip(EventPresentation.CategoryLabel(c), true);
             chip.Margin = new Thickness(0, 0, 6, 0);
-            chip.Toggled += on => { if (on) _categories.Add(c); else _categories.Remove(c); RebuildTimeline(); };
+            chip.Toggled += on => { if (on) _categories.Add(c); else _categories.Remove(c); FilterChanged(); };
             _categoryRow.Children.Add(chip);
         }
         box.Children.Add(_categoryRow);
@@ -296,7 +298,7 @@ internal sealed class CctvView : UserControl
         {
             if (_fillingWatchers) return;
             _watcherFilter = _watcherCombo.SelectedIndex <= 0 ? "" : _watcherCombo.SelectedItem as string ?? "";
-            RebuildTimeline();
+            FilterChanged();
         };
 
         _timelineList.Margin = new Thickness(0, 10, 0, 0);
@@ -331,6 +333,9 @@ internal sealed class CctvView : UserControl
         return Hit(e.Character) || Hit(e.Ship) || Hit(e.Corporation is null ? null : canonical(e.Corporation));
     }
 
+    /// <summary>검색·분류·눈깔 조건이 바뀌면 첫 페이지로 돌아간다.</summary>
+    private void FilterChanged() { _page = 0; RebuildTimeline(); }
+
     private void RebuildTimeline()
     {
         _timelineList.Children.Clear();
@@ -350,7 +355,26 @@ internal sealed class CctvView : UserControl
             return;
         }
 
-        foreach (var e in shown) _timelineList.Children.Add(TimelineRow(e, d));
+        var pages = (shown.Count + PageSize - 1) / PageSize;
+        _page = Math.Clamp(_page, 0, pages - 1);
+        foreach (var e in shown.Skip(_page * PageSize).Take(PageSize)) _timelineList.Children.Add(TimelineRow(e, d));
+        if (pages > 1) _timelineList.Children.Add(BuildPager(pages, shown.Count));
+    }
+
+    private UIElement BuildPager(int pages, int total)
+    {
+        var bar = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 14, 0, 2) };
+        void Go(int page) { _page = Math.Clamp(page, 0, pages - 1); RebuildTimeline(); }
+        Button Nav(string text, int page, bool enabled) { var b = UiKit.Button(text, () => Go(page), "GhostButton", double.NaN, enabled); b.Margin = new Thickness(2, 0, 2, 0); b.Padding = new Thickness(10, 3, 10, 3); return b; }
+        bar.Children.Add(Nav("«", 0, _page > 0));
+        bar.Children.Add(Nav("‹ 이전", _page - 1, _page > 0));
+        var label = UiKit.Text($"{_page + 1} / {pages}", 13, FontWeights.SemiBold, null, new Thickness(12, 0, 12, 0)); label.VerticalAlignment = VerticalAlignment.Center;
+        bar.Children.Add(label);
+        bar.Children.Add(Nav("다음 ›", _page + 1, _page < pages - 1));
+        bar.Children.Add(Nav("»", pages - 1, _page < pages - 1));
+        var count = UiKit.Dim($"총 {total}건", 12, new Thickness(14, 0, 0, 0), false); count.VerticalAlignment = VerticalAlignment.Center;
+        bar.Children.Add(count);
+        return bar;
     }
 
     private UIElement TimelineRow(EventRow e, ViewData d)
@@ -469,7 +493,8 @@ internal sealed class CctvView : UserControl
     private static UIElement SignatureRow(string time, string id, string name, string group, bool unscanned, bool? created)
     {
         var g = new Grid { Margin = new Thickness(0, 3, 0, 3) };
-        foreach (var w in new[] { 18.0, 44.0, 46.0, -1, 76.0 }) g.ColumnDefinitions.Add(new ColumnDefinition { Width = w < 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
+        foreach (var w in new[] { created == null ? 0.0 : 18.0, 44.0, 46.0, -1, 76.0 })   // 현재 목록에는 +/− 표시가 없으므로 그 자리를 비우지 않고 제목과 왼쪽을 맞춘다
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = w < 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
         var sign = created == null ? "" : created == true ? "+" : "−";
         var t = UiKit.Text(sign, 14, FontWeights.Bold, created == true ? UiKit.Good : UiKit.Bad); Grid.SetColumn(t, 0); g.Children.Add(t);
         var tm = UiKit.Dim(time, 12, null, false); Grid.SetColumn(tm, 1); g.Children.Add(tm);
