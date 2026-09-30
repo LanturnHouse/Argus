@@ -296,14 +296,9 @@ public sealed class CctvService : IDisposable
 
     // ---------- 눈깔 등록에 쓰는 정보 ----------
 
-    /// <summary>등록할 수 있는 캐릭터: 폴더의 파일 이름에서 찾은 캐릭터 + 지금 실행 중인 클라이언트 (이름, 이미지 수, 가장 최근 촬영 시각).</summary>
-    public List<(string Name, int Images, string Latest)> KnownCharacters()
-    {
-        var list = Store.CharacterStats(ImageFolder).Select(s => (s.Name, s.ImageCount, s.LatestCaptureAt)).ToList();
-        foreach (var c in _ctx.Clients.Current.Select(c => c.Character).Distinct(StringComparer.OrdinalIgnoreCase))
-            if (!list.Any(x => string.Equals(x.Name, c, StringComparison.OrdinalIgnoreCase))) list.Add((c, 0, ""));
-        return list;
-    }
+    /// <summary>등록할 수 있는 캐릭터: 스크린샷이 폴더에 있는 캐릭터만 (이름, 이미지 수, 가장 최근 촬영 시각). 스크린샷이 없으면 영역을 지정할 수 없으므로 목록에 넣지 않는다.</summary>
+    public List<(string Name, int Images, string Latest)> KnownCharacters() =>
+        [.. Store.CharacterStats(ImageFolder).Where(s => s.ImageCount > 0).Select(s => (s.Name, s.ImageCount, s.LatestCaptureAt))];
 
     /// <summary>이 캐릭터의 가장 최근 스크린샷 id (영역 지정에 쓴다). 없으면 null.</summary>
     public long? LatestImageId(string character) =>

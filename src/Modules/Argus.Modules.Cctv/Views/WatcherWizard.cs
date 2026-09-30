@@ -204,7 +204,8 @@ internal sealed class WatcherWizard
         _editor.SetImage(id is { } i ? DialogKit.LoadImage(_svc.Store.ImagePath(i)) : null);
         _help.Text = id != null
             ? $"{name} 의 가장 최근 스크린샷을 사용합니다{(latest?.Length >= 19 ? $" ({latest.Substring(11, 8)})" : "")}. 영역 종류를 고른 뒤 스크린샷 위를 마우스로 끌어 그립니다. 화면 감시 캡처가 '선택 영역'만 저장한 것이면 그 범위 안에서 지정합니다."
-            : name.Length == 0 ? "캐릭터를 선택하세요." : "이 캐릭터의 스크린샷이 아직 없어 영역을 그릴 수 없습니다. 화면 감시 캡처가 스크린샷을 저장하면 다시 열어 주세요.";
+            : _known.Count == 0 ? "스크린샷이 있는 캐릭터가 없습니다. 화면 감시 캡처가 CCTV 스크린샷을 저장하면 그 캐릭터가 여기에 나타납니다."
+            : "이 캐릭터의 스크린샷을 폴더에서 찾을 수 없어 영역을 그릴 수 없습니다.";
     }
 
     private void OnSave()
