@@ -161,6 +161,7 @@ public sealed class CctvService : IDisposable
 
         lock (_lock)
         {
+            Store.ResetStuckProcessing();
             _recognizer.ResetReuse();
             _attempts.Clear();
             _cts = new CancellationTokenSource();

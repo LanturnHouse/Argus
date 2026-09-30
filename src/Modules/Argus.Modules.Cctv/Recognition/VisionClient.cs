@@ -12,7 +12,7 @@ public sealed class VisionSettings
     /// <summary>이미지를 읽을 수 있는(비전) 모델 이름.</summary>
     public string Model { get; set; } = "qwen2.5vl:7b";
     /// <summary>모델 호출 하나를 기다리는 최대 시간(초).</summary>
-    public int TimeoutSeconds { get; set; } = 60;
+    public int TimeoutSeconds { get; set; } = 240;
     /// <summary>Ollama keep_alive: 요청 뒤 모델을 메모리(GPU)에 붙들어 두는 시간. Argus 는 대기가 끝나면 스스로 내리므로, 이 값은 Argus 가 갑자기 꺼졌을 때 모델이 오래 남지 않게 하는 안전장치다.</summary>
     public string KeepAlive { get; set; } = "5m";
 }

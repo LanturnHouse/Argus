@@ -23,7 +23,7 @@ public sealed class CctvSettings
         Vision ??= new VisionSettings();
         if (string.IsNullOrWhiteSpace(Vision.Host)) Vision.Host = "http://127.0.0.1:11434";
         if (string.IsNullOrWhiteSpace(Vision.Model)) Vision.Model = "qwen2.5vl:7b";
-        Vision.TimeoutSeconds = Math.Clamp(Vision.TimeoutSeconds, 10, 600);
+        Vision.TimeoutSeconds = Math.Clamp(Vision.TimeoutSeconds, 60, 600);
         if (string.IsNullOrWhiteSpace(Vision.KeepAlive)) Vision.KeepAlive = "5m";
         ScanSeconds = Math.Clamp(ScanSeconds, 1, 30);
         UnloadAfterIdleSeconds = Math.Clamp(UnloadAfterIdleSeconds, 0, 600);

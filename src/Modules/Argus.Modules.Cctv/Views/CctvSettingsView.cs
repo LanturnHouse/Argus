@@ -14,7 +14,7 @@ internal sealed class CctvSettingsView : UserControl
     private readonly TextBox _host = new();
     private readonly TextBox _model = new() { MinWidth = 260 };
     private readonly ComboBox _modelPick = new() { MinWidth = 220, Margin = new Thickness(8, 0, 0, 0) };
-    private readonly NumberBox _timeout = new() { Minimum = 10, Maximum = 600, Step = 1, Decimals = 0, Unit = "초" };
+    private readonly NumberBox _timeout = new() { Minimum = 60, Maximum = 600, Step = 1, Decimals = 0, Unit = "초" };
     private readonly NumberBox _idle = new() { Minimum = 0, Maximum = 600, Step = 1, Decimals = 0, Unit = "초" };
     private readonly TextBlock _testResult = new() { TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _loaded = new() { TextWrapping = TextWrapping.Wrap };
