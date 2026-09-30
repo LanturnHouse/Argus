@@ -39,8 +39,14 @@ public sealed class RegionRecognizer(VisionClient vision, Func<VisionSettings> s
 
         var crop = ImageOps.Crop(full, box.Left, box.Top, box.Width, box.Height);
         var png = ImageOps.EncodePng(crop);
-        Directory.CreateDirectory(dir);
-        await File.WriteAllBytesAsync(sourcePath, png, ct).ConfigureAwait(false);
+        // 크롭 파일은 도킹 숫자(아주 작음)만 남긴다: '최고 도킹 수' 근거로 보여 준다. 오버뷰·프로빙은 판정 근거 창에서 원본 스크린샷 위에 영역을 그려 보여 주므로 따로 저장하지 않는다.
+        string? savedPath = null;
+        if (region.Kind == RegionKind.Dock)
+        {
+            Directory.CreateDirectory(dir);
+            await File.WriteAllBytesAsync(sourcePath, png, ct).ConfigureAwait(false);
+            savedPath = sourcePath;
+        }
 
         var key = $"{image.Character}|{region.WatcherId}|{regionIndex}|{region.Kind.Db()}";
         var hash = ImageOps.Hash(crop);
@@ -48,13 +54,19 @@ public sealed class RegionRecognizer(VisionClient vision, Func<VisionSettings> s
         {
             ReusedCalls++;
             var copy = CctvJson.Deserialize<RegionPayload>(CctvJson.Serialize(previous.Observation.Payload)) ?? new RegionPayload();
-            copy.RegionIndex = regionIndex; copy.SourceBox = box; copy.SourceCropPath = sourcePath; copy.Method = "reused";
+            copy.RegionIndex = regionIndex; copy.SourceBox = box; copy.SourceCropPath = savedPath; copy.Method = "reused";
             return new Observation { WatcherId = region.WatcherId, Kind = region.Kind, Confidence = previous.Observation.Confidence, Payload = copy };
         }
 
         ModelCalls++;
         var answer = await vision.RecognizeAsync(region.Kind, png, settings(), ct).ConfigureAwait(false);
-        if (answer == null) throw new VisionUnavailableException(vision.LastError ?? "비전 모델이 응답하지 않았습니다.");
+        if (answer == null)
+        {
+            var why = vision.LastError ?? "비전 모델이 응답하지 않았습니다.";
+            // 답은 했지만 읽을 수 없는 응답이면 같은 이미지를 몇 번 다시 해 보고(안 되면 실패 기록), 연결 문제면 이미지를 그대로 두고 나중에 다시 시도한다.
+            if (vision.LastFailureWasBadResponse) throw new RecognitionFailedException($"{region.Kind.Label()} 영역: {why}");
+            throw new VisionUnavailableException(why);
+        }
 
         var blank = new RegionFields();
         var fields = TextRules.ShapeVisionFields(region.Kind, answer, blank, "");
@@ -63,7 +75,7 @@ public sealed class RegionRecognizer(VisionClient vision, Func<VisionSettings> s
         var observation = new Observation
         {
             WatcherId = region.WatcherId, Kind = region.Kind, Confidence = 0.9,
-            Payload = new RegionPayload { RawText = answer.ToJsonString(), Fields = fields, RegionIndex = regionIndex, SourceBox = box, SourceCropPath = sourcePath, Method = "vision" },
+            Payload = new RegionPayload { RawText = answer.ToJsonString(), Fields = fields, RegionIndex = regionIndex, SourceBox = box, SourceCropPath = savedPath, Method = "vision" },
         };
         _last[key] = (hash, observation);
         return observation;

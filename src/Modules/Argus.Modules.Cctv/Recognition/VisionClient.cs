@@ -27,6 +27,12 @@ public sealed class VisionClient : IDisposable
 
     /// <summary>마지막 호출이 실패한 이유 (성공하면 null). 설정·상태 화면에 보여 준다.</summary>
     public string? LastError { get; private set; }
+
+    /// <summary>
+    /// 마지막 실패가 '모델이 답은 했지만 읽을 수 없는 응답'(잘림, JSON 아님)인가. true 면 같은 이미지를 몇 번 다시 해 보고 안 되면 실패로 기록한다.
+    /// false 면 서버에 연결하지 못했거나 시간 초과 같은 문제라 이미지는 그대로 두고 나중에 다시 시도한다.
+    /// </summary>
+    public bool LastFailureWasBadResponse { get; private set; }
     public DateTime? LastSuccessAt { get; private set; }
 
     private static readonly Dictionary<RegionKind, string> Prompts = new()
@@ -88,24 +94,46 @@ public sealed class VisionClient : IDisposable
         {
             ["model"] = settings.Model, ["prompt"] = prompt, ["images"] = new JsonArray(Convert.ToBase64String(png)),
             ["format"] = "json", ["stream"] = false, ["keep_alive"] = settings.KeepAlive,
-            ["options"] = new JsonObject { ["temperature"] = 0, ["num_predict"] = 1200 },
+            ["options"] = new JsonObject { ["temperature"] = 0, ["num_predict"] = 4000 },
         };
         var (json, error) = await PostGenerateAsync(settings, body, settings.TimeoutSeconds, ct).ConfigureAwait(false);
-        if (json == null) { LastError = error; return null; }
-        var parsed = ParseJsonObject(json["response"]?.GetValue<string>());
-        if (parsed == null) { LastError = "모델 응답을 JSON 으로 읽지 못했습니다."; return null; }
-        LastError = null; LastSuccessAt = DateTime.Now;
+        if (json == null) { LastError = error; LastFailureWasBadResponse = false; return null; }
+        var text = json["response"]?.GetValue<string>();
+        var parsed = ParseJsonObject(text);
+        if (parsed == null)
+        {
+            var cut = json["done_reason"]?.GetValue<string>() == "length";
+            LastError = cut ? "모델 응답이 중간에 잘렸습니다 (행이 너무 많음)." : $"모델 응답을 JSON 으로 읽지 못했습니다: {Trim(text ?? "")}";
+            LastFailureWasBadResponse = true;
+            return null;
+        }
+        LastError = null; LastFailureWasBadResponse = false; LastSuccessAt = DateTime.Now;
         return parsed;
     }
 
-    /// <summary>모델이 JSON 앞뒤에 설명을 붙였어도 첫 { 부터 마지막 } 까지를 읽어 본다.</summary>
+    /// <summary>
+    /// 모델 응답을 JSON 개체로 읽는다. 앞뒤에 설명이 붙었으면 첫 { 부터 마지막 } 까지를 읽고,
+    /// 행 목록 중간에서 잘렸으면(길이 제한) 마지막으로 완성된 행까지만 살려서 닫는다 (잘린 마지막 행은 버린다).
+    /// </summary>
     internal static JsonObject? ParseJsonObject(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         try { return JsonNode.Parse(text) as JsonObject; } catch { /* 아래에서 다시 시도 */ }
-        var a = text.IndexOf('{'); var b = text.LastIndexOf('}');
-        if (a < 0 || b <= a) return null;
-        try { return JsonNode.Parse(text[a..(b + 1)]) as JsonObject; } catch { return null; }
+        var a = text.IndexOf('{');
+        if (a < 0) return null;
+        var b = text.LastIndexOf('}');
+        if (b > a) { try { return JsonNode.Parse(text[a..(b + 1)]) as JsonObject; } catch { /* 잘린 응답일 수 있다 */ } }
+
+        // 잘림 복구: 마지막 완성된 행('}' 로 끝나는 것)까지 자르고 배열과 개체를 닫는다.
+        for (var end = text.LastIndexOf('}'); end > a; end = text.LastIndexOf('}', end - 1))
+        {
+            foreach (var closer in new[] { "]}", "}]}" })
+            {
+                try { if (JsonNode.Parse(text[a..(end + 1)] + closer) is JsonObject repaired) return repaired; } catch { /* 다음 후보 */ }
+            }
+            if (end == 0) break;
+        }
+        return null;
     }
 
     // ---------- 모델 올리기 · 내리기 ----------
