@@ -3,7 +3,7 @@ using Argus.Core.Modules;
 
 namespace Argus.Modules.CombatLog;
 
-/// <summary>EVE 전투 로그를 읽어 캐릭터별 수치(받는 DPS·LOGI·뉴트, 태클, 레드박싱)를 계산해 이벤트로 알린다. 화면은 프리뷰 HUD 등 구독하는 쪽이 그린다.</summary>
+/// <summary>EVE 전투 로그를 읽어 캐릭터별 수치(받는 DPS·LOGI·뉴트, 레드박싱)를 계산해 이벤트로 알린다. 화면은 프리뷰 HUD 등 구독하는 쪽이 그린다.</summary>
 public sealed class CombatLogModule : IArgusModule, IDashboardContributor
 {
     private CombatLogService? _service;
@@ -51,9 +51,6 @@ public sealed class CombatLogModule : IArgusModule, IDashboardContributor
             Num(DashboardColumns.Neut, "받는 뉴트 (노스·캡 전송 반영). 캡이 빠지면 빨강 -, 늘어나면 파랑 +", s.NeutIn, FmtNeut(s.NeutIn), s.NeutIn > 0 ? "#FF5C5C" : "#5CB8FF"),
         };
         if (s.SurgeAt != long.MinValue && Environment.TickCount64 - s.SurgeAt <= 10_000) chips.Add(new("레드박싱", ChipTone.Bad, "받는 피해가 갑자기 크게 늘었습니다"));
-        if (s.Hic) chips.Add(new("HIC", ChipTone.Bad, "HIC 에게 포인팅당함"));
-        if (s.Scram) chips.Add(new("SCRAM", ChipTone.Accent, "워프 스크램블러에 걸림"));
-        if (s.Disrupt) chips.Add(new("DISRUPT", ChipTone.Good, "워프 디스럽터에 걸림"));
         return chips;
     }
 

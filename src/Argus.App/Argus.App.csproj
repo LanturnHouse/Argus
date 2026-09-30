@@ -5,6 +5,7 @@
     <ProjectReference Include="..\Modules\Argus.Modules.Profiles\Argus.Modules.Profiles.csproj" />
     <ProjectReference Include="..\Modules\Argus.Modules.Preview\Argus.Modules.Preview.csproj" />
     <ProjectReference Include="..\Modules\Argus.Modules.CombatLog\Argus.Modules.CombatLog.csproj" />
+    <ProjectReference Include="..\Modules\Argus.Modules.Cctv\Argus.Modules.Cctv.csproj" />
     <ProjectReference Include="..\Argus.Core\Argus.Core.csproj" />
     <ProjectReference Include="..\Argus.Ui\Argus.Ui.csproj" />
     <ProjectReference Include="..\Modules\Argus.Modules.Alerts\Argus.Modules.Alerts.csproj" />

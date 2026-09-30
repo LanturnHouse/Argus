@@ -160,7 +160,7 @@ internal sealed class PreviewTile : IDisposable
         _hud.SetActive(active);
     }
 
-    public void SetCombat(Argus.Core.Events.CombatSnapshot? snapshot, HudFlags flags) => _hud.SetCombat(snapshot, flags);
+    public void SetCombat(Argus.Core.Events.CombatSnapshot? snapshot, TackleFlags tackle, HudFlags flags) => _hud.SetCombat(snapshot, tackle, flags);
 
     public void SetSurge(bool tint, int flashMs, string? keyHint) => _hud.SetSurge(tint, flashMs, keyHint);
     internal HudView Hud => _hud;

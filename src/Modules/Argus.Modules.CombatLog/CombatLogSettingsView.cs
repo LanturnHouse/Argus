@@ -7,13 +7,12 @@ using Argus.Ui;
 
 namespace Argus.Modules.CombatLog;
 
-/// <summary>설정 > 프리뷰 > '전투 로그': 수치 계산 구간, 태클 표시 시간, 로그 폴더, 지금 읽고 있는 로그.</summary>
+/// <summary>설정 > 프리뷰 > '전투 로그': 수치 계산 구간, 레드박싱 기준, 로그 폴더, 지금 읽고 있는 로그.</summary>
 internal sealed class CombatLogSettingsView : UserControl
 {
     private readonly CombatLogService _svc;
     // 수치는 모두 직접 입력 칸(위·아래 화살표): 정수는 1 단위, 배수는 0.1 단위
     private readonly NumberBox _window = new() { Minimum = CombatLogSettings.MinWindow, Maximum = CombatLogSettings.MaxWindow, Step = 1, Decimals = 0, Unit = "초" };
-    private readonly NumberBox _hold = new() { Minimum = CombatLogSettings.MinHold, Maximum = CombatLogSettings.MaxHold, Step = 1, Decimals = 0, Unit = "초" };
     private readonly NumberBox _surgeDps = new() { Minimum = CombatLogSettings.MinSurgeDps, Maximum = CombatLogSettings.MaxSurgeDps, Step = 1, Decimals = 0, Unit = "DPS" };
     private readonly NumberBox _surgeRatio = new() { Minimum = CombatLogSettings.MinSurgeRatio, Maximum = CombatLogSettings.MaxSurgeRatio, Step = 0.1, Decimals = 1, Unit = "배" };
     private readonly TextBox _folder = new() { IsReadOnly = true };
@@ -28,7 +27,6 @@ internal sealed class CombatLogSettingsView : UserControl
 
         var root = new StackPanel();
         root.Children.Add(Section("수치 계산 구간", "받는 DPS · 받는 LOGI · 받는 뉴트는 최근 이 시간 동안의 합을 초로 나눈 평균입니다. 받는 뉴트는 이펙티브 값으로, 받은 뉴트와 노스 피해에서, 내가 노스페라투로 빤 양과 원격 캐패시터 전송으로 받은 양을 뺀 순 캡 감소량(GJ/초)입니다. 짧을수록 빨리 반응하고 들쭉날쭉하며, 길수록 부드럽습니다.", _window));
-        root.Children.Add(Section("태클 표시 유지 시간", "태클(스크램블·디스럽트·HIC) 시도가 로그에 마지막으로 나온 뒤 이 시간 동안 걸려 있는 것으로 표시합니다. 로그에는 시도만 남고 풀림은 기록되지 않아서 시간으로 판단합니다.", _hold));
 
         root.Children.Add(Section("레드박싱: 최소 받는 DPS", "최근 3초의 받는 DPS 가 이 값 이상이어야 레드박싱으로 봅니다. 너무 작은 피해에 반응하지 않게 하는 기준입니다.", _surgeDps));
         root.Children.Add(Section("레드박싱: 배수", "최근 3초의 받는 DPS 가 그 직전 30초 평균의 이 배수 이상이어야 레드박싱으로 봅니다. 클수록 갑작스러운 증가만 잡습니다.", _surgeRatio));
@@ -51,7 +49,6 @@ internal sealed class CombatLogSettingsView : UserControl
         _refresh.Tick += (_, _) => RefreshStatus();
 
         _window.ValueChanged += (_, _) => { if (!_loading) _svc.Update(windowSeconds: (int)_window.Value); };
-        _hold.ValueChanged += (_, _) => { if (!_loading) _svc.Update(tackleHoldSeconds: (int)_hold.Value); };
         _surgeDps.ValueChanged += (_, _) => { if (!_loading) _svc.Update(surgeMinDps: (int)_surgeDps.Value); };
         _surgeRatio.ValueChanged += (_, _) => { if (!_loading) _svc.Update(surgeRatio: _surgeRatio.Value); };
         change.Click += (_, _) =>
@@ -72,7 +69,6 @@ internal sealed class CombatLogSettingsView : UserControl
     {
         _loading = true;
         _window.Value = _svc.Settings.WindowSeconds;
-        _hold.Value = _svc.Settings.TackleHoldSeconds;
         _surgeDps.Value = _svc.Settings.SurgeMinDps;
         _surgeRatio.Value = _svc.Settings.SurgeRatio;
         _folder.Text = _svc.FolderPath;

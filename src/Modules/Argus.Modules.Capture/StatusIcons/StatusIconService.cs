@@ -41,6 +41,7 @@ public sealed class StatusIconService : IDisposable
         public WgcSession? Session;
         public readonly Debounce[] Kinds = [new(), new(), new()];
         public StatusIconProbe Probe = new("대기", null, [], null);
+        public long StateAt;   // 마지막으로 태클 상태를 읽은 시각 (TickCount64)
     }
 
     private readonly IModuleContext _ctx;
@@ -80,6 +81,12 @@ public sealed class StatusIconService : IDisposable
 
     /// <summary>지금 읽고 있는 캐릭터 이름들.</summary>
     internal IReadOnlyList<string> Characters { get { lock (_lock) return [.. _entries.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase)]; } }
+
+    /// <summary>이 캐릭터의 가장 최근 태클 상태 (최근 2초 안에 읽은 것만, 아니면 null).</summary>
+    internal TackleIconState? Latest(string character)
+    {
+        lock (_lock) return _entries.TryGetValue(character, out var e) && Environment.TickCount64 - e.StateAt <= 2000 ? e.Probe.State : null;
+    }
 
     internal StatusIconProbe? Probe(string character) { lock (_lock) return _entries.TryGetValue(character, out var e) ? e.Probe : null; }
 
@@ -151,6 +158,7 @@ public sealed class StatusIconService : IDisposable
             Hic: e.Kinds[(int)TackleKind.Hic].Update(Seen(TackleKind.Hic), s.OnFrames, s.OffFrames));
 
         e.Probe = new StatusIconProbe($"읽는 중 · 아이콘 {icons.Count}개", frame, icons, state);
+        e.StateAt = Environment.TickCount64;
         return state;
     }
 

@@ -58,7 +58,6 @@ public sealed class CombatLogService : IDisposable
     private void Clamp()
     {
         Settings.WindowSeconds = Math.Clamp(Settings.WindowSeconds, CombatLogSettings.MinWindow, CombatLogSettings.MaxWindow);
-        Settings.TackleHoldSeconds = Math.Clamp(Settings.TackleHoldSeconds, CombatLogSettings.MinHold, CombatLogSettings.MaxHold);
         Settings.SurgeMinDps = Math.Clamp(Settings.SurgeMinDps, CombatLogSettings.MinSurgeDps, CombatLogSettings.MaxSurgeDps);
         Settings.SurgeRatio = Math.Clamp(Settings.SurgeRatio, CombatLogSettings.MinSurgeRatio, CombatLogSettings.MaxSurgeRatio);
     }
@@ -75,12 +74,11 @@ public sealed class CombatLogService : IDisposable
 
     // ---------- 설정 ----------
 
-    public void Update(int? windowSeconds = null, int? tackleHoldSeconds = null, string? logFolder = null, int? surgeMinDps = null, double? surgeRatio = null)
+    public void Update(int? windowSeconds = null, string? logFolder = null, int? surgeMinDps = null, double? surgeRatio = null)
     {
         if (surgeMinDps is { } sd) Settings.SurgeMinDps = sd;
         if (surgeRatio is { } sr) Settings.SurgeRatio = sr;
         if (windowSeconds is { } w) Settings.WindowSeconds = w;
-        if (tackleHoldSeconds is { } h) Settings.TackleHoldSeconds = h;
         if (logFolder != null)
         {
             Settings.LogFolder = logFolder;
@@ -131,7 +129,7 @@ public sealed class CombatLogService : IDisposable
             if (now - _lastPublish >= PublishMs && _tracked.Count > 0)
             {
                 _lastPublish = now;
-                var snaps = _tracked.Values.Select(t => t.Stats.Snapshot(now, Settings.WindowSeconds, Settings.TackleHoldSeconds, Settings.SurgeMinDps, Settings.SurgeRatio)).ToList();
+                var snaps = _tracked.Values.Select(t => t.Stats.Snapshot(now, Settings.WindowSeconds, Settings.SurgeMinDps, Settings.SurgeRatio)).ToList();
                 _latest.Clear();
                 foreach (var s in snaps) _latest[s.Character] = s;
                 _ctx.Events.Publish(new CombatStatsUpdated(snaps));

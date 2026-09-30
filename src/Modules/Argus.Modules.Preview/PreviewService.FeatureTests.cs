@@ -138,36 +138,31 @@ public sealed partial class PreviewService
     /// <summary>실제 전투 로그 값(없을 수 있음)에 시험 값을 겹친 결과. 시험이 없으면 실제 값 그대로.</summary>
     private CombatSnapshot? SnapshotFor(string character)
     {
-        var real = WithIcons(character, _combat.GetValueOrDefault(character));
+        var real = _combat.GetValueOrDefault(character);
         if (!_featureTests.TryGetValue(character, out var t)) return real;
 
         var now = Environment.TickCount64;
-        var s = real ?? new CombatSnapshot(character, 0, 0, 0, false, false, false);
+        var s = real ?? new CombatSnapshot(character, 0, 0, 0);
         if (t.Ramp is { } r)
         {
             var v = r.ValueAt((now - t.RampStart) / 1000.0);
             s = s with { DpsIn = r.DpsIn ? v : s.DpsIn, LogiIn = r.Logi ? v : s.LogiIn, NeutIn = r.Neut ? v : s.NeutIn };
         }
-        if (now < t.TackleUntil) s = s with { Hic = s.Hic || t.Hic, Scram = s.Scram || t.Scram, Disrupt = s.Disrupt || t.Disrupt };
         if (t.SurgeAt > s.SurgeAt) s = s with { SurgeAt = t.SurgeAt };
         return s;
     }
 
     /// <summary>
-    /// 화면 아이콘에서 읽은 태클 상태를 전투 로그 값에 합친다. 이 클라이언트에서 태클 아이콘을 읽어 본 적이 있으면 아이콘이 기준이라
-    /// 유지 중에는 켜져 있고 풀리면 바로 꺼진다. 읽어 본 적이 없으면 로그의 유지 시간 판정에 아이콘을 더하기만 한다.
+    /// 이 클라이언트에 지금 걸려 있는 태클: 화면의 상태이상 아이콘에서 읽은 값(읽기가 끊겼으면 없음)에 기능 테스트의 리본을 더한다.
+    /// 아이콘이 떠 있는 동안 켜져 있고 풀리면 바로 꺼진다.
     /// </summary>
-    private CombatSnapshot? WithIcons(string character, CombatSnapshot? log)
+    private TackleFlags TackleFor(string character)
     {
         var now = Environment.TickCount64;
-        if (!_icons.TryGetValue(character, out var ic) || now - ic.At > IconStaleMs) return log;
-
-        var calibrated = _iconSeenAt.TryGetValue(character, out var seen) && now - seen <= IconCalibratedMs;
-        var ii = ic.State;
-        var (disrupt, scram, hic) = calibrated ? (ii.Disrupt, ii.Scram, ii.Hic)
-                                               : ((log?.Disrupt ?? false) || ii.Disrupt, (log?.Scram ?? false) || ii.Scram, (log?.Hic ?? false) || ii.Hic);
-        if (log == null) return disrupt || scram || hic ? new CombatSnapshot(character, 0, 0, 0, disrupt, scram, hic) : null;
-        return log with { Disrupt = disrupt, Scram = scram, Hic = hic };
+        var real = _icons.TryGetValue(character, out var ic) && now - ic.At <= IconStaleMs ? new TackleFlags(ic.State.Hic, ic.State.Scram, ic.State.Disrupt) : default;
+        if (_featureTests.TryGetValue(character, out var t) && now < t.TackleUntil)
+            return new TackleFlags(real.Hic || t.Hic, real.Scram || t.Scram, real.Disrupt || t.Disrupt);
+        return real;
     }
 
     /// <summary>주기 작업: 진행 중인 수치 시험을 화면에 반영하고, 끝난 시험은 치워서 실제 값으로 돌아가게 한다.</summary>

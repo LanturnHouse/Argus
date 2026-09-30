@@ -28,6 +28,7 @@ public partial class App : Application
         Host.Register(new Modules.Profiles.ProfilesModule());
         Host.Register(new Modules.Preview.PreviewModule());
         Host.Register(new Modules.CombatLog.CombatLogModule());
+        Host.Register(new Modules.Cctv.CctvModule());   // EVE CCTV 웹앱(Node 서비스 + 웹 화면)을 Argus 안에서 실행하고 탭으로 보여준다
         Host.Register(new Modules.Capture.StatusIcons.StatusIconModule());   // 설정 > 프리뷰 > '상태이상 인식'
         Host.Register(new Modules.Preview.PreviewFeatureTestModule());   // 설정 > 프리뷰 맨 아래 '기능 테스트'
 

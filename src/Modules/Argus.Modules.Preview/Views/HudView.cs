@@ -124,8 +124,8 @@ internal sealed class HudView : Grid
         _surgeKey.Visibility = string.IsNullOrEmpty(keyHint) ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    /// <summary>전투 수치와 태클 표시를 갱신한다. snapshot 이 null 이면(전투 로그를 못 읽는 중) 아무것도 그리지 않는다.</summary>
-    public void SetCombat(CombatSnapshot? s, HudFlags flags)
+    /// <summary>전투 수치와 태클 리본을 갱신한다. 수치는 snapshot 이 null 이면(전투 로그를 못 읽는 중) 그리지 않고, 태클 리본은 수치와 별개로 그린다.</summary>
+    public void SetCombat(CombatSnapshot? s, TackleFlags tackle, HudFlags flags)
     {
         // 하단 수치 바: 켜 둔 항목만 같은 폭으로 나눠 그린다
         var cells = new List<UIElement>();
@@ -146,11 +146,11 @@ internal sealed class HudView : Grid
 
         // 오른쪽 위 대각 리본: HIC → 스크램블 → 디스럽터 순으로 모서리에서 안쪽으로 겹치지 않게 쌓는다. 색만으로 구분하지 않도록 글자도 함께 적는다.
         _ribbons.Children.Clear();
-        if (s == null || !flags.Tackle) return;
+        if (!flags.Tackle) return;
         var index = 0;
-        if (s.Hic) AddRibbon("HIC", RibbonHic, index++);
-        if (s.Scram) AddRibbon("SCRAM", RibbonScram, index++);
-        if (s.Disrupt) AddRibbon("DISRUPT", RibbonDisrupt, index++);
+        if (tackle.Hic) AddRibbon("HIC", RibbonHic, index++);
+        if (tackle.Scram) AddRibbon("SCRAM", RibbonScram, index++);
+        if (tackle.Disrupt) AddRibbon("DISRUPT", RibbonDisrupt, index++);
     }
 
     internal static Brush NeutColor(double v) => Math.Round(v) > 0 ? ColorNeutDrain : Math.Round(v) < 0 ? ColorNeutGain : ColorNeut;

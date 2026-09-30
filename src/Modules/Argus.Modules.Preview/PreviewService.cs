@@ -24,13 +24,9 @@ public sealed partial class PreviewService : IDisposable
     private long _combatAt;
     private const int CombatStaleMs = 3000;
 
-    // 상태이상 인식 모듈이 화면의 아이콘에서 읽은 태클 상태. 신선한 동안만 쓴다.
+    // 상태이상 인식 모듈이 화면의 아이콘에서 읽은 태클 상태 (태클의 유일한 출처). 읽기가 끊기면(최소화, 모듈 끔 등) 1.5초 뒤에 버린다.
     private readonly Dictionary<string, (TackleIconState State, long At)> _icons = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, long> _iconSeenAt = new(StringComparer.OrdinalIgnoreCase);   // 마지막으로 태클 아이콘이 실제로 보인 시각
     private const int IconStaleMs = 1500;
-    // 태클 아이콘을 읽어 본 적이 있는 클라이언트는(= 이 클라이언트에서 인식이 되는 것을 확인) 아이콘을 기준으로 켜고 끈다.
-    // 아직 읽어 본 적이 없으면 인식이 안 되는 것일 수도 있으므로, 로그의 유지 시간 판정에 아이콘을 더한다.
-    private const int IconCalibratedMs = 10 * 60 * 1000;
 
     // 'EVE 를 플레이 중일 때만 표시' 규칙용 상태
     private const int HideDelayMs = 200;
@@ -117,7 +113,7 @@ public sealed partial class PreviewService : IDisposable
             ScheduleSave();
         }
         tile.SetVisible(ShouldShow(tile, layout), bounds);
-        tile.SetCombat(SnapshotFor(tile.Client.Character), layout.Hud);
+        tile.SetCombat(SnapshotFor(tile.Client.Character), TackleFor(tile.Client.Character), layout.Hud);
         tile.Hud.SetOpacities(Settings.HudBarOpacity, Settings.HudRibbonOpacity);
     }
 
@@ -243,14 +239,13 @@ public sealed partial class PreviewService : IDisposable
         {
             var before = _icons.TryGetValue(s.Character, out var prev) && now - prev.At <= IconStaleMs ? prev.State : null;
             _icons[s.Character] = (s, now);
-            if (s.Disrupt || s.Scram || s.Hic) _iconSeenAt[s.Character] = now;
             if (before != null && before.Disrupt == s.Disrupt && before.Scram == s.Scram && before.Hic == s.Hic) continue;   // 바뀐 것만 다시 그린다
             if (_tiles.TryGetValue(s.Character, out var tile)) ApplyCombat(tile);
         }
         RefreshSurge();
     }
 
-    /// <summary>읽기가 끊긴(최소화, 모듈 중지 등) 클라이언트의 낡은 아이콘 정보를 버리고 로그 판정으로 되돌린다.</summary>
+    /// <summary>읽기가 끊긴(최소화, 모듈 중지 등) 클라이언트의 낡은 아이콘 정보를 버린다 (리본이 꺼진다).</summary>
     private void ExpireIcons()
     {
         if (_icons.Count == 0) return;
@@ -267,7 +262,7 @@ public sealed partial class PreviewService : IDisposable
         var layout = ActivePreset.Clients.FirstOrDefault(l => string.Equals(l.Character, tile.Client.Character, StringComparison.OrdinalIgnoreCase));
         if (layout == null) return;
         var snap = SnapshotFor(tile.Client.Character);
-        tile.SetCombat(snap, layout.Hud);
+        tile.SetCombat(snap, TackleFor(tile.Client.Character), layout.Hud);
 
         // 레드박싱: 색조, 전환 키 안내, 레드박싱 전환 단축키 모두 레드박싱 후 SurgeSeconds 동안만 살아 있다.
         var hint = Settings.ShowSurgeKeyHint && SurgeActive(snap, layout) && ActivePreset.SurgeHotkey is { IsEmpty: false } key ? key.ToString() : null;

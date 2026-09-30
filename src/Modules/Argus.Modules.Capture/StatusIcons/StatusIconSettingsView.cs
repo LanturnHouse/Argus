@@ -38,7 +38,7 @@ internal sealed class StatusIconSettingsView : UserControl
 
         var root = new StackPanel();
         root.Children.Add(Section("상태이상 인식", "EVE 화면 아래 가운데에 뜨는 상태이상 아이콘을 읽어 스크램블·디스럽터·HIC 포인팅을 판정합니다. 전투 로그는 태클이 걸린 순간 한 줄만 남기지만, 아이콘은 걸려 있는 동안 계속 떠 있어서 유지와 풀림을 바로 알 수 있습니다. " +
-            "아이콘을 한 번이라도 읽은 클라이언트는 프리뷰 리본이 아이콘을 따라가고, 아직 못 읽은 동안에는 전투 로그의 유지 시간 방식이 그대로 쓰입니다. 창을 최소화한 클라이언트는 읽지 못합니다.", _enabled));
+            "이 기능이 프리뷰 태클 리본의 유일한 출처입니다 (전투 로그에서는 태클을 읽지 않습니다). 끄거나, 창을 최소화해서 읽지 못하는 동안에는 리본이 나오지 않습니다.", _enabled));
 
         var shapeRow = new DockPanel();
         DockPanel.SetDock(_shapeText, Dock.Right);

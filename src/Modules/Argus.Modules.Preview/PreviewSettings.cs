@@ -32,6 +32,12 @@ public readonly record struct HudFlags(bool DpsIn, bool Logi, bool Neut, bool Ta
 
 public enum HudElement { DpsIn, Logi, Neut, Tackle, Surge }
 
+/// <summary>지금 걸려 있는 태클. 화면의 상태이상 아이콘에서 읽은 값이다 (전투 로그에는 유지·해제가 남지 않는다).</summary>
+public readonly record struct TackleFlags(bool Hic, bool Scram, bool Disrupt)
+{
+    public bool Any => Hic || Scram || Disrupt;
+}
+
 /// <summary>프리뷰 배치 프리셋. 프리셋마다 클라이언트별 위치·크기·표시 여부를 따로 갖는다.</summary>
 public sealed class LayoutPreset
 {
