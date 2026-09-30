@@ -200,7 +200,7 @@
 
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Character}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="230" HorizontalAlignment="Left"/>
-                                            <TextBlock Text="{Binding Info}" Style="{DynamicResource Dim}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                            <TextBlock Text="{Binding Info}" ToolTip="{Binding Info}" Style="{DynamicResource Dim}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
                                         </StackPanel>
 
                                         <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
@@ -220,7 +220,7 @@
                                             </TextBlock>
 
                                             <!-- 이 클라이언트로 바로 가는 단축키 (크기는 고정: 지정 중 문구가 바뀌어도 커지지 않는다) -->
-                                            <Button Tag="{Binding Character}" Click="Hotkey_Click" ToolTip="{Binding HotkeyText}" Width="170" Padding="8,5" Margin="0,0,4,0">
+                                            <Button Tag="{Binding Character}" Click="Hotkey_Click" ToolTip="{Binding HotkeyText}" Width="128" Padding="8,5" Margin="0,0,4,0">
                                                 <TextBlock Text="{Binding HotkeyText}" TextTrimming="CharacterEllipsis"/>
                                             </Button>
                                             <Button Content="&#xE711;" FontFamily="{DynamicResource IconFont}" Tag="{Binding Character}" Click="HotkeyClear_Click" ToolTip="단축키 지우기"

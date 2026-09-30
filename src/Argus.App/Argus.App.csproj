@@ -19,6 +19,11 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>Argus</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Argus.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Argus.ico" />
+  </ItemGroup>
 
 </Project>

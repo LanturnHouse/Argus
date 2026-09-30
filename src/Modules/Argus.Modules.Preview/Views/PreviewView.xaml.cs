@@ -144,17 +144,17 @@ public partial class PreviewView : UserControl
         foreach (var w in warnings) PresetBox.Children.Add(WarningBox(w.Message));
         PresetBox.Children.Add(CycleRow("사이클 다음 클라이언트", "next", p.CycleNext, t => _svc.SetCycleHotkey(true, t)));
         PresetBox.Children.Add(CycleRow("사이클 이전 클라이언트", "prev", p.CyclePrev, t => _svc.SetCycleHotkey(false, t)));
-        PresetBox.Children.Add(CycleRow($"레드박싱이 난 클라이언트로 전환 (레드박싱 후 {_svc.Settings.SurgeSeconds}초만 동작)", "surge", p.SurgeHotkey, t => _svc.SetSurgeHotkey(t)));
+        PresetBox.Children.Add(CycleRow("레드박싱이 난 클라이언트로 전환", "surge", p.SurgeHotkey, t => _svc.SetSurgeHotkey(t), $"레드박싱 후 {_svc.Settings.SurgeSeconds}초 동안만 동작합니다."));
     }
 
-    private UIElement CycleRow(string label, string key, HotkeyTrigger? trigger, Action<HotkeyTrigger?> set)
+    private UIElement CycleRow(string label, string key, HotkeyTrigger? trigger, Action<HotkeyTrigger?> set, string? note = null)
     {
         var capturing = _capturing == key;
         var text = capturing ? "누르세요…  (Esc 취소)" : trigger?.ToString() ?? "단축키 없음";
         var pick = new Button
         {
             Content = new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis },
-            ToolTip = text, Width = 260, Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 4, 0),   // 폭 고정: 지정 중 문구가 바뀌어도 커지지 않는다
+            ToolTip = text, Width = 210, Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 4, 0),   // 폭 고정: 지정 중 문구가 바뀌어도 커지지 않는다
         };
         if (trigger == null && !capturing) pick.Opacity = 0.7;
         if (capturing) pick.SetResourceReference(StyleProperty, "PrimaryButton");
@@ -169,7 +169,15 @@ public partial class PreviewView : UserControl
         var row = new DockPanel { Margin = new Thickness(0, 3, 0, 3) };
         DockPanel.SetDock(bar, Dock.Right);
         row.Children.Add(bar);
-        row.Children.Add(new TextBlock { Text = label, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        labels.Children.Add(new TextBlock { Text = label, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = label });
+        if (note != null)
+        {
+            var dim = new TextBlock { Text = note, FontSize = 11.5, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = note };
+            dim.SetResourceReference(StyleProperty, "Dim");
+            labels.Children.Add(dim);
+        }
+        row.Children.Add(labels);
         return row;
     }
 

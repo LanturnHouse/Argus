@@ -144,11 +144,11 @@
             <!-- 설정 카드 -->
             <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="2*" MinWidth="230"/>
                     <ColumnDefinition Width="12"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*" MinWidth="150"/>
                     <ColumnDefinition Width="12"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*" MinWidth="150"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- 저장 범위 -->

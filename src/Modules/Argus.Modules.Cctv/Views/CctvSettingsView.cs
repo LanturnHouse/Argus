@@ -37,13 +37,15 @@ internal sealed class CctvSettingsView : UserControl
         var test = UiKit.Button("연결 확인", async () => await TestAsync()); test.Margin = new Thickness(8, 0, 0, 0);
         DockPanel.SetDock(test, Dock.Right);
         hostRow.Children.Add(test); hostRow.Children.Add(_host);
-        var hostBox = new StackPanel(); hostBox.Children.Add(hostRow); _testResult.Margin = new Thickness(0, 6, 0, 0); hostBox.Children.Add(_testResult);
+        var hostBox = new StackPanel(); hostBox.Children.Add(hostRow); hostBox.Children.Add(_testResult);   // 결과가 생기면 위쪽 여백을 준다 (빈 줄이 공간을 차지하지 않게)
         root.Children.Add(UiKit.Section("Ollama 서버 주소", "비전 모델을 실행하는 Ollama 서버입니다. 이 PC 의 서버만 쓰며 밖으로 나가는 요청은 없습니다. 기본값은 http://127.0.0.1:11434 입니다.", hostBox));
 
-        var modelRow = new StackPanel { Orientation = Orientation.Horizontal };
-        var refresh = UiKit.Button("설치된 모델 불러오기", async () => await LoadModelsAsync()); refresh.Margin = new Thickness(8, 0, 0, 0);
-        modelRow.Children.Add(_model); modelRow.Children.Add(_modelPick); modelRow.Children.Add(refresh);
-        root.Children.Add(UiKit.Section("비전 모델", "이미지를 읽을 수 있는(비전) 모델이어야 합니다. 권장: qwen2.5vl:7b (6GB, 그래픽 메모리에 올라가 영역 하나를 2~3초에 읽습니다). 더 큰 모델은 그래픽 메모리를 넘으면 매우 느려집니다.", modelRow));
+        var modelRow = new DockPanel();
+        var refresh = UiKit.Button("목록 불러오기", async () => await LoadModelsAsync()); refresh.Margin = new Thickness(8, 0, 0, 0);
+        DockPanel.SetDock(refresh, Dock.Right); DockPanel.SetDock(_modelPick, Dock.Right);
+        _modelPick.Width = 200; _modelPick.MinWidth = 0; _model.MinWidth = 0;
+        modelRow.Children.Add(refresh); modelRow.Children.Add(_modelPick); modelRow.Children.Add(_model);
+        root.Children.Add(UiKit.Section("비전 모델", "이미지를 읽을 수 있는(비전) 모델이어야 합니다. 권장: qwen2.5vl:7b (6GB, 그래픽 메모리에 올라가 도킹 숫자는 1초 안에, 오버뷰 한 영역은 행 수에 따라 수 초~수십 초에 읽습니다). 더 큰 모델은 그래픽 메모리를 넘으면 매우 느려집니다.", modelRow));
         root.Children.Add(UiKit.Section("모델 응답 대기 시간", "모델 호출 하나를 이만큼 기다려도 답이 없으면 그 이미지를 잠시 뒤 다시 시도합니다.", _timeout));
         root.Children.Add(UiKit.Section("대기가 끝난 뒤 모델을 내리기까지", "읽을 이미지가 모두 끝난 뒤 이 시간 동안 새 이미지가 없으면 모델을 내려 그래픽 메모리를 비웁니다. 0 이면 바로 내립니다. 스크린샷이 몇 초 간격으로 계속 들어오면 올렸다 내렸다 하지 않도록 조금 두는 것이 좋습니다.", _idle));
 
@@ -111,9 +113,9 @@ internal sealed class CctvSettingsView : UserControl
     private async Task TestAsync()
     {
         _svc.Settings.Vision.Host = _host.Text.Trim(); CommitModel(); Save();
-        _testResult.Text = "확인하는 중…";
+        _testResult.Text = "확인하는 중…"; _testResult.Margin = new Thickness(0, 6, 0, 0);
         var (ok, msg) = await _svc.Vision.TestAsync(_svc.Settings.Vision);
-        _testResult.Text = (ok ? "✔ " : "✘ ") + msg;
+        _testResult.Text = (ok ? "✔ " : "✘ ") + msg; _testResult.Margin = new Thickness(0, 6, 0, 0);
         _testResult.Foreground = ok ? UiKit.Good : UiKit.Bad;
         if (ok) await LoadModelsAsync(quiet: true);
     }
@@ -129,9 +131,9 @@ internal sealed class CctvSettingsView : UserControl
             foreach (var m in models) _modelPick.Items.Add(m);
             _modelPick.SelectedItem = models.FirstOrDefault(m => string.Equals(m, current, StringComparison.OrdinalIgnoreCase));
             _loading = false;
-            if (!quiet) _testResult.Text = $"설치된 모델 {models.Count}개를 불러왔습니다.";
+            if (!quiet) _testResult.Text = $"설치된 모델 {models.Count}개를 불러왔습니다."; _testResult.Margin = new Thickness(0, 6, 0, 0);
         }
-        catch (Exception ex) { _loading = false; if (!quiet) { _testResult.Text = ex is HttpRequestException ? "Ollama 에 연결할 수 없습니다." : ex.Message; _testResult.Foreground = UiKit.Bad; } }
+        catch (Exception ex) { _loading = false; if (!quiet) { _testResult.Text = ex is HttpRequestException ? "Ollama 에 연결할 수 없습니다." : ex.Message; _testResult.Margin = new Thickness(0, 6, 0, 0); _testResult.Foreground = UiKit.Bad; } }
     }
 
     private async Task RefreshLoadedAsync()

@@ -153,7 +153,7 @@ internal sealed class CctvView : UserControl
         open.Margin = new Thickness(8, 0, 0, 0); open.Padding = new Thickness(10, 3, 10, 3);
         DockPanel.SetDock(open, Dock.Right);
         folder.Children.Add(open);
-        folder.Children.Add(UiKit.Dim($"이미지 폴더: {s.Folder} · 감시 중인 캐릭터의 이미지 {s.ImageCount:N0}장" + (s.ModelCalls + s.ReusedCalls > 0 ? $" · 모델 호출 {s.ModelCalls:N0}회(변화 없는 화면 {s.ReusedCalls:N0}회는 재사용)" : ""), 12, null, false));
+        folder.Children.Add(UiKit.Dim($"이미지 폴더: {s.Folder} · 감시 중인 캐릭터의 이미지 {s.ImageCount:N0}장" + (s.ModelCalls + s.ReusedCalls > 0 ? $" · 모델 호출 {s.ModelCalls:N0}회(변화 없는 화면 {s.ReusedCalls:N0}회는 재사용)" : ""), 12, null, true));
         body.Children.Add(folder);
         return UiKit.Card(body);
     }

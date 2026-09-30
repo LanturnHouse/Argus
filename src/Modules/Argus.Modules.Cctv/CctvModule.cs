@@ -15,7 +15,7 @@ public sealed class CctvModule : IArgusModule, IDashboardContributor
 
     public string Id => "argus.cctv";
     public string DisplayName => "CCTV";
-    public string Icon => "";
+    public string Icon => "";
 
     public Task StartAsync(IModuleContext context, CancellationToken ct)
     {
