@@ -1,0 +1,20 @@
+<UserControl x:Class="Argus.Modules.Profiles.ProfilesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,18">
+            <Border DockPanel.Dock="Right" Style="{DynamicResource SegmentBar}" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="TabTemplates" GroupName="ptab" Content="설정파일" Style="{DynamicResource Segment}" Padding="16,7" Checked="Tab_Click"/>
+                    <RadioButton x:Name="TabPresets" GroupName="ptab" Content="프리셋" Style="{DynamicResource Segment}" Checked="Tab_Click"/>
+                    <RadioButton x:Name="TabApply" GroupName="ptab" Content="적용" Style="{DynamicResource Segment}" Checked="Tab_Click"/>
+                </StackPanel>
+            </Border>
+            <StackPanel>
+                <TextBlock Text="설정 프리셋" FontSize="24" FontWeight="Bold"/>
+                <TextBlock x:Name="Subtitle" Style="{DynamicResource Dim}" Margin="0,4,0,0"/>
+            </StackPanel>
+        </DockPanel>
+        <ContentPresenter x:Name="Body"/>
+    </DockPanel>
+</UserControl>

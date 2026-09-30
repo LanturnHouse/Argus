@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Argus.Core\Argus.Core.csproj" />
+    <ProjectReference Include="..\..\Argus.Ui\Argus.Ui.csproj" />
+    <InternalsVisibleTo Include="ArgusPreviewSmoke" />
+    <InternalsVisibleTo Include="ArgusHotkeysSmoke" />
+    <InternalsVisibleTo Include="ArgusUiSmoke" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.22000.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>

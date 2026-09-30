@@ -1,0 +1,85 @@
+<UserControl x:Class="Argus.Modules.Profiles.PresetsTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260"/>
+            <ColumnDefinition Width="16"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- 프리셋 목록 -->
+        <Border Style="{DynamicResource Card}" Padding="0">
+            <DockPanel>
+                <Button DockPanel.Dock="Bottom" Content="+  새 프리셋" Margin="12" Padding="14,9" Style="{DynamicResource PrimaryButton}" Click="New_Click"/>
+                <Border DockPanel.Dock="Top" Padding="16,12" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
+                    <TextBlock Text="프리셋" Style="{DynamicResource CardTitle}"/>
+                </Border>
+                <Grid>
+                    <TextBlock x:Name="ListEmpty" Style="{DynamicResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Text="프리셋이 없습니다."/>
+                    <ListBox x:Name="PresetList" Margin="8" SelectionChanged="Preset_Selected">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Entries.Count, StringFormat={}{0}명}" Style="{DynamicResource Dim}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </DockPanel>
+        </Border>
+
+        <!-- 편집기 -->
+        <Border Grid.Column="2" Style="{DynamicResource Card}" Padding="0">
+            <DockPanel>
+                <Border DockPanel.Dock="Bottom" Padding="16,12" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0">
+                    <DockPanel>
+                        <Button x:Name="SaveBtn" DockPanel.Dock="Right" Content="프리셋 저장" Padding="22,9" Style="{DynamicResource PrimaryButton}" Click="Save_Click"/>
+                        <Button x:Name="DeleteBtn" DockPanel.Dock="Right" Content="삭제" Margin="0,0,8,0" Padding="16,9" Click="Delete_Click" IsEnabled="False"/>
+                        <TextBlock x:Name="Note" Style="{DynamicResource Dim}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    </DockPanel>
+                </Border>
+
+                <StackPanel DockPanel.Dock="Top" Margin="16,14,16,10">
+                    <TextBlock Text="1. 프리셋 이름" Style="{DynamicResource CardTitle}"/>
+                    <Grid Margin="0,8,0,0">
+                        <TextBox x:Name="NameBox" MaxLength="40" TextChanged="Name_Changed"/>
+                        <TextBlock x:Name="NameHint" Text="프리셋 이름 (예: 전투 UI, 채굴 UI)" Style="{DynamicResource Dim}"
+                                   Margin="11,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                    </Grid>
+                    <TextBlock Text="2~3. 사용할 캐릭터를 선택하고, 각 캐릭터에 적용할 설정파일을 고르세요" Style="{DynamicResource CardTitle}" Margin="0,16,0,0"/>
+                    <TextBlock x:Name="NoTemplates" Style="{DynamicResource Dim}" Margin="0,6,0,0" Foreground="#E5A03A"
+                               Text="저장된 설정파일이 없습니다. 먼저 '설정파일' 탭에서 저장하세요." Visibility="Collapsed"/>
+                </StackPanel>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="Rows" Margin="12,0,12,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource Surface2}" CornerRadius="8" Padding="12,9" Margin="0,0,0,6">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="200"/>
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox IsChecked="{Binding Included, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding Detail}" Style="{DynamicResource Dim}"/>
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="2" ItemsSource="{Binding Templates}" SelectedItem="{Binding Template, Mode=TwoWay}"
+                                                  IsEnabled="{Binding Included}" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

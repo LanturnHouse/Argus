@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Argus 프리뷰 HUD 시안</title>
+<style>
+  :root {
+    --bg: #0e1014; --surface: #161920; --line: #2a2f3a; --text: #e8eaf0; --dim: #8b93a5; --accent: #4c8dff;
+    --disrupt: #2fbf5b; --scram: #2f7bff; --hic: #e5484d;
+    --out: #7fd4ff; --in: #ffb454; --logi: #9be7c4; --neut: #d6a8ff;
+    --z: 1;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe UI Variable Text","Segoe UI","Malgun Gothic",sans-serif; padding: 24px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 16px; max-width: 900px; line-height: 1.5; }
+  .ctl { display: flex; gap: 8px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .ctl button { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 14px; cursor: pointer; font: inherit; font-size: 13px; }
+  .ctl button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ctl span { color: var(--dim); font-size: 12px; }
+
+  table { border-collapse: separate; border-spacing: 14px 12px; }
+  th { font-weight: 600; font-size: 13px; text-align: left; padding: 0 0 2px; }
+  th small { display: block; color: var(--dim); font-weight: 400; font-size: 11px; margin-top: 2px; max-width: 250px; }
+  td.state { color: var(--dim); font-size: 12px; white-space: nowrap; vertical-align: middle; padding-right: 6px; }
+  td.state b { color: var(--text); display: block; font-size: 13px; }
+
+  /* ===== 썸네일 (실제 크기 210x118) ===== */
+  .stage { width: calc(210px * var(--z)); height: calc(118px * var(--z)); }
+  .thumb { position: relative; width: 210px; height: 118px; overflow: hidden; background: #000 center/cover no-repeat;
+           transform: scale(var(--z)); transform-origin: 0 0; image-rendering: auto; }
+  .thumb .cap { position: absolute; left: 4px; top: 2px; font-size: 12px; font-weight: 600; color: #ffa02e; text-shadow: 0 0 3px #000, 0 0 3px #000; z-index: 6; white-space: nowrap; }
+  .thumb.active { outline: 3px solid #7ac231; outline-offset: -3px; }
+
+  /* 하단 수치 바 (A, B 공통) */
+  .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 22px; display: grid; grid-template-columns: repeat(4, 1fr);
+         background: linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,.72)); z-index: 5; }
+  .bar .c { display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+            border-left: 1px solid rgba(255,255,255,.08); }
+  .bar .c:first-child { border-left: 0; }
+  .bar .c i { font-style: normal; font-size: 9px; opacity: .85; }
+  .c.out { color: var(--out); } .c.in { color: var(--in); } .c.logi { color: var(--logi); } .c.neut { color: var(--neut); }
+  .c.zero { opacity: .35; }
+  .c.hot { color: #fff; background: rgba(229,72,77,.65); }
+
+  /* ===== A: 하단 바 + 좌상단 대각 리본 (제안하신 방식) ===== */
+  .ribbonA { position: absolute; right: -34px; top: 14px; width: 120px; transform: rotate(45deg); text-align: center; font-size: 10px; font-weight: 800;
+             letter-spacing: .5px; padding: 2px 0; color: #fff; z-index: 7; box-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  .ribbonA.disrupt { background: var(--disrupt); } .ribbonA.scram { background: var(--scram); } .ribbonA.hic { background: var(--hic); }
+
+  /* ===== B: 하단 바 + 상단 전체 폭 띠 ===== */
+  .bandB { position: absolute; left: 0; right: 0; top: 0; height: 17px; z-index: 5; display: flex; align-items: center; justify-content: flex-end;
+           padding: 0 6px; font-size: 11px; font-weight: 800; color: #fff; letter-spacing: .4px; }
+  .bandB.disrupt { background: rgba(47,191,91,.92); } .bandB.scram { background: rgba(47,123,255,.92); } .bandB.hic { background: rgba(229,72,77,.94); }
+  .bandB em { font-style: normal; font-weight: 600; opacity: .9; margin-left: 6px; font-variant-numeric: tabular-nums; }
+  .thumb.hasBandB .cap { top: 19px; }
+
+  /* ===== C: 좌측 세로 레일 + 테두리 + 우측 칩 ===== */
+  .railC { position: absolute; left: 0; top: 0; bottom: 0; width: 16px; z-index: 5; display: flex; align-items: center; justify-content: center; }
+  .railC span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 10px; font-weight: 800; color: #fff; letter-spacing: 1px; }
+  .railC.disrupt { background: var(--disrupt); } .railC.scram { background: var(--scram); } .railC.hic { background: var(--hic); }
+  .frameC { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+  .frameC.disrupt { box-shadow: inset 0 0 0 2px var(--disrupt), inset 0 0 14px rgba(47,191,91,.55); }
+  .frameC.scram { box-shadow: inset 0 0 0 2px var(--scram), inset 0 0 14px rgba(47,123,255,.6); }
+  .frameC.hic { box-shadow: inset 0 0 0 2px var(--hic), inset 0 0 14px rgba(229,72,77,.65); }
+  .chipsC { position: absolute; right: 3px; bottom: 4px; display: flex; flex-direction: column; gap: 2px; z-index: 6; align-items: flex-end; }
+  .chipsC .k { background: rgba(0,0,0,.78); border-radius: 4px; padding: 0 5px; font-size: 12px; font-weight: 700; line-height: 15px; font-variant-numeric: tabular-nums; }
+  .chipsC .k i { font-style: normal; font-size: 9px; margin-right: 3px; opacity: .85; }
+  .thumb.hasRail .cap { left: 20px; }
+
+  /* ===== 피격 급증 경고 (공통): 붉은 깜빡임 ===== */
+  .danger { position: absolute; inset: 0; z-index: 8; pointer-events: none; border: 4px solid #ff2a2a; background: rgba(255,0,0,.18); animation: blink .7s steps(1) infinite; }
+  @keyframes blink { 0% { opacity: 1 } 50% { opacity: 0 } 100% { opacity: 1 } }
+  .paused .danger { animation: none; }
+
+  .notes { max-width: 980px; margin-top: 26px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; font-size: 13px; line-height: 1.6; }
+  .notes b { color: #fff; }
+  .notes li { margin: 4px 0; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 6px 0 14px; font-size: 12px; color: var(--dim); }
+  .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+  <h1>프리뷰 HUD 시안</h1>
+  <div class="sub">
+    실제 EVE 화면 위에 수치와 태클 표시를 겹쳐 본 시안입니다. 사용자님이 쓰시는 프리뷰 크기(약 210×118)를 기준으로 그렸으니
+    <b>[실제 크기]</b>에서 읽히는지를 먼저 봐주세요. 왼쪽 위 이름은 캐릭터 이름 라벨입니다.
+    수치는 왼쪽부터 <b style="color:var(--out)">내 DPS</b> · <b style="color:var(--in)">받는 DPS</b> · <b style="color:var(--logi)">받는 LOGI</b> · <b style="color:var(--neut)">받는 뉴트</b> 순서입니다.
+  </div>
+
+  <div class="ctl">
+    <button id="z1" class="on">실제 크기 (1×)</button>
+    <button id="z2">2배 확대</button>
+    <button id="blink" class="on">깜빡임 켜기</button>
+    <span>※ 태클 색: <b style="color:var(--disrupt)">디스럽터=초록</b> / <b style="color:var(--scram)">스크램블=파랑</b> / <b style="color:var(--hic)">HIC 포인팅=빨강</b></span>
+  </div>
+
+  <div class="legend">
+    <span><i class="sw" style="background:#7ac231"></i>지금 활성(포커스) 클라이언트의 초록 테두리 — 첫 줄 왼쪽 예시</span>
+    <span><i class="sw" style="background:var(--disrupt)"></i>디스럽터 초록과 <b>겹쳐 헷갈릴 수 있음</b> (아래 의견 참고)</span>
+  </div>
+
+  <table id="grid"></table>
+
+  <div class="notes">
+    <b>보시는 법</b>
+    <ul>
+      <li><b>A</b>: 제안하신 방식입니다. 하단에 수치 4개, 대각 리본을 둡니다. 왼쪽 위에 두면 <b>이름 라벨을 가려서</b> 오른쪽 위로 옮겼습니다.</li>
+      <li><b>B</b>: 리본 대신 위쪽에 전체 폭 띠를 둡니다. 글자가 커서 작은 크기에서도 읽기 쉽고, 태클이 걸린 <b>시간(초)</b>도 함께 보여줄 수 있습니다.</li>
+      <li><b>C</b>: 왼쪽 세로 레일 + 테두리 발광 + 우측 하단 칩입니다. 화면을 가리는 면적은 가장 크지만 멀리서도 색으로 바로 구분됩니다.</li>
+      <li>급증 경고(빨간 깜빡임)는 세 시안 모두 같은 방식이라 화면 전체가 붉게 번쩍입니다. 태클과 동시에 걸리면 두 표시가 함께 나옵니다.</li>
+    </ul>
+  </div>
+
+<script>
+const IMG = ['thumb_a.png', 'thumb_b.png'];
+const fmt = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
+
+const STATES = [
+  { key: 'normal',  label: '평상시',        sub: '교전 중, 태클 없음', out: 412,  in: 0,    logi: 0,   neut: 0,   tackle: null,       danger: false, active: true },
+  { key: 'disrupt', label: '디스럽터에 걸림', sub: '워프 디스럽트 시도', out: 0,    in: 186,  logi: 0,   neut: 0,   tackle: 'disrupt',  danger: false },
+  { key: 'scram',   label: '스크램블에 걸림', sub: '워프 스크램블 시도', out: 233,  in: 640,  logi: 0,   neut: 90,  tackle: 'scram',    danger: false },
+  { key: 'hic',     label: 'HIC 포인팅',     sub: 'HIC가 스크램블',    out: 0,    in: 1240, logi: 320, neut: 0,   tackle: 'hic',      danger: false },
+  { key: 'spike',   label: '피격 급증',      sub: '받는 DPS 급증',     out: 120,  in: 2860, logi: 0,   neut: 410, tackle: null,       danger: true },
+  { key: 'both',    label: '스크램블 + 급증', sub: '가장 위험한 상황',  out: 0,    in: 3400, logi: 540, neut: 1200,tackle: 'scram',    danger: true },
+];
+const TACKLE = { disrupt: 'DISRUPT', scram: 'SCRAM', hic: 'HIC' };
+const NAME = ['LanturnAlBag-i', 'Downgraded Avenger I'];
+
+function bar(s) {
+  const cell = (cls, icon, v, hot) => `<div class="c ${cls} ${v === 0 ? 'zero' : ''} ${hot ? 'hot' : ''}"><i>${icon}</i>${fmt(v)}</div>`;
+  return `<div class="bar">${cell('out', '▲', s.out)}${cell('in', '▼', s.in, s.danger)}${cell('logi', '✚', s.logi)}${cell('neut', '⚡', s.neut)}</div>`;
+}
+function chips(s) {
+  const row = (color, icon, v) => v > 0 ? `<div class="k" style="color:${color}"><i>${icon}</i>${fmt(v)}</div>` : '';
+  return `<div class="chipsC">${row('var(--out)', '▲', s.out)}${row(s.danger ? '#fff' : 'var(--in)', '▼', s.in)}${row('var(--logi)', '✚', s.logi)}${row('var(--neut)', '⚡', s.neut)}</div>`;
+}
+
+function thumb(variant, s, idx) {
+  const t = s.tackle;
+  let cls = 'thumb', inner = '';
+  if (s.active && variant === 'A') cls += ' active';
+  if (variant === 'A') {
+    inner += bar(s);
+    if (t) inner += `<div class="ribbonA ${t}">${TACKLE[t]}</div>`;
+  } else if (variant === 'B') {
+    inner += bar(s);
+    if (t) { cls += ' hasBandB'; inner += `<div class="bandB ${t}">${TACKLE[t]}<em>0:${String(12 + idx * 7).padStart(2, '0')}</em></div>`; }
+  } else {
+    if (t) { cls += ' hasRail'; inner += `<div class="railC ${t}"><span>${TACKLE[t]}</span></div><div class="frameC ${t}"></div>`; }
+    inner += chips(s);
+  }
+  if (s.danger) inner += '<div class="danger"></div>';
+  return `<div class="stage"><div class="${cls}" style="background-image:url(${IMG[idx % 2]})"><div class="cap">${NAME[idx % 2]}</div>${inner}</div></div>`;
+}
+
+function build() {
+  let h = '<tr><td></td>';
+  h += '<th>A. 하단 바 + 대각 리본<small>제안하신 방식</small></th>';
+  h += '<th>B. 하단 바 + 상단 띠<small>글자가 크고 태클 지속시간 표시 가능</small></th>';
+  h += '<th>C. 측면 레일 + 테두리 발광<small>색으로 즉시 구분, 가리는 면적 큼</small></th></tr>';
+  STATES.forEach((s, i) => {
+    h += `<tr><td class="state"><b>${s.label}</b>${s.sub}</td>`;
+    ['A', 'B', 'C'].forEach(v => { h += `<td>${thumb(v, s, i)}</td>`; });
+    h += '</tr>';
+  });
+  document.getElementById('grid').innerHTML = h;
+}
+build();
+
+const root = document.documentElement;
+function setZ(z) {
+  root.style.setProperty('--z', z);
+  document.getElementById('z1').classList.toggle('on', z === 1);
+  document.getElementById('z2').classList.toggle('on', z === 2);
+}
+document.getElementById('z1').onclick = () => setZ(1);
+document.getElementById('z2').onclick = () => setZ(2);
+document.getElementById('blink').onclick = e => {
+  const on = e.target.classList.toggle('on');
+  document.body.classList.toggle('paused', !on);
+  e.target.textContent = on ? '깜빡임 켜기' : '깜빡임 끔';
+};
+</script>
+</body>
+</html>
