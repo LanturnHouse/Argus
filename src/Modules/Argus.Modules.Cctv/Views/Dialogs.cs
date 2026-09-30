@@ -75,7 +75,7 @@ internal static class EvidenceWindow
         var right = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
         var verification = EventPresentation.Verification(e);
         right.Children.Add(DialogKit.Fact("판정", $"{EventPresentation.Label(e.Type)}{(verification != null ? $" · {verification}" : "")} · 인식 신뢰도 {Math.Round((e.Confidence ?? 0) * 100)}%"));
-        right.Children.Add(DialogKit.Fact("캐릭터 / 콥 / 함선", $"{e.Character ?? "미확인"} · {(e.Corporation is { Length: > 0 } c ? $"[{canonical(c)}]" : "—")}\n{EventPresentation.Detail(e)}"));
+        right.Children.Add(DialogKit.Fact("캐릭터 / 콥 / 함선", $"{e.Character ?? "미확인"} · {(e.Corporation is { Length: > 0 } c && canonical(c) is var t && t != "미확인" ? $"[{t}]" : "—")}\n{EventPresentation.Detail(e)}"));
         right.Children.Add(DialogKit.Fact("감시 눈깔", e.WatcherLabel ?? "미지정 눈깔"));
         right.Children.Add(DialogKit.Fact("판정 시각", e.Time.Replace("T", " ")));
         right.Children.Add(DialogKit.Fact("판정 규칙", EventPresentation.Rule(e)));

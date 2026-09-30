@@ -29,7 +29,18 @@ public sealed record CorpMember(string Name, List<(string Time, string Ship, str
 /// </summary>
 public static class Summaries
 {
-    private static string CleanTicker(string? value) => Regex.Replace(Regex.Replace(value ?? "", @"^\[|\]$", ""), @"\s+", "").ToUpperInvariant();
+    /// <summary>
+    /// 코퍼레이션 티커로 받아들일 수 있는 글자인지: 1~5자의 영문·숫자(와 . - _)뿐이어야 한다.
+    /// 비전 모델이 다른 줄의 함선·구조물 이름(예: "Raitaru*")을 콥 칸에 잘못 옮겨 적는 일이 있어 걸러 낸다.
+    /// 받아들일 수 없으면 빈 문자열.
+    /// </summary>
+    public static string ValidTicker(string? value)
+    {
+        var t = Regex.Replace(Regex.Replace(value ?? "", @"^\[|\]$", ""), @"\s+", "");
+        return Regex.IsMatch(t, @"^[A-Za-z0-9._\-]{1,5}$") ? t : "";
+    }
+
+    private static string CleanTicker(string? value) => ValidTicker(value).ToUpperInvariant();
 
     // OCR/비전이 헷갈리는 글자를 같은 것으로 접는다: G→6, O→0, I·L→1, S→5, B→8
     private static string Fold(string v) => v.Replace('G', '6').Replace('O', '0').Replace('I', '1').Replace('L', '1').Replace('S', '5').Replace('B', '8');

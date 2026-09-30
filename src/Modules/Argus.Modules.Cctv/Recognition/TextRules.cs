@@ -94,6 +94,8 @@ public static class TextRules
         if (kind == RegionKind.Overview)
         {
             if (vision["rows"] is not JsonArray rows) return fallback;
+            // 다른 줄의 함선 이름이 콥 칸에 들어온 경우를 걸러 내기 위해, 이 화면에 나온 함선 이름을 모아 둔다.
+            var shipNames = rows.OfType<JsonObject>().Select(r => CleanText(S(r["ship"])).TrimEnd('*', ' ').ToUpperInvariant()).Where(n => n.Length > 0).ToHashSet();
             var overview = rows.OfType<JsonObject>().Select(r =>
             {
                 var modelSpeed = SpeedOf(r["speed"]);
@@ -101,7 +103,7 @@ public static class TextRules
                 var ocrSpeed = SpeedFromOcrLine(rawText, name);
                 return new OverviewRow
                 {
-                    Distance = CleanText(S(r["distance"])), Name = name, Ship = CleanText(S(r["ship"])), Corporation = CleanText(S(r["corporation"])),
+                    Distance = CleanText(S(r["distance"])), Name = name, Ship = CleanText(S(r["ship"])), Corporation = CorporationOf(S(r["corporation"]), shipNames),
                     Speed = ocrSpeed >= 10_000 && (modelSpeed == null || modelSpeed < 10_000) ? ocrSpeed : modelSpeed, Raw = "", Confidence = 0.9,
                 };
             }).Where(r => r.Name.Length > 0).ToList();
@@ -116,6 +118,13 @@ public static class TextRules
         }
 
         return fallback;
+    }
+
+    /// <summary>모델이 읽은 콥 티커를 검증한다: 티커 모양이 아니거나 이 화면의 함선 이름이면 버린다.</summary>
+    internal static string CorporationOf(string? value, ICollection<string> shipNames)
+    {
+        var ticker = Summaries.ValidTicker(CleanText(value));
+        return ticker.Length > 0 && !shipNames.Contains(ticker.ToUpperInvariant()) ? ticker : "";
     }
 
     private static bool IsTrue(JsonNode? n) => n is JsonValue v && v.TryGetValue<bool>(out var b) && b;

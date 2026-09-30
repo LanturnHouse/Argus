@@ -373,7 +373,7 @@ internal sealed class CctvView : UserControl
         main.Children.Add(UiKit.Dim(EventPresentation.Detail(e), 12, new Thickness(0, 1, 0, 0), false));
         Grid.SetColumn(main, 2); g.Children.Add(main);
 
-        var corp = UiKit.Text(e.Corporation is { Length: > 0 } c ? $"[{d.Canonical(c)}]" : "—", 12.5, FontWeights.SemiBold, UiKit.AccentText); Grid.SetColumn(corp, 3); g.Children.Add(corp);
+        var corp = UiKit.Text(e.Corporation is { Length: > 0 } c && d.Canonical(c) is var t && t != "미확인" ? $"[{t}]" : "—", 12.5, FontWeights.SemiBold, UiKit.AccentText); Grid.SetColumn(corp, 3); g.Children.Add(corp);
         var src = UiKit.Dim(e.WatcherLabel ?? "미지정 눈깔", 12, null, false); src.TextTrimming = TextTrimming.CharacterEllipsis; Grid.SetColumn(src, 4); g.Children.Add(src);
         var conf = UiKit.Dim($"인식 {Math.Round((e.Confidence ?? 0) * 100)}%", 11.5, null, false); Grid.SetColumn(conf, 5); g.Children.Add(conf);
 
