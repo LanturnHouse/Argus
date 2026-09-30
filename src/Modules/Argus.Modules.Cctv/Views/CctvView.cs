@@ -16,10 +16,11 @@ internal sealed class CctvView : UserControl
     private readonly StackPanel _timelineList = new();
     private readonly TextBox _search = new() { Width = 240, ToolTip = "캐릭터 · 함선 · 콥 티커 검색" };
     private readonly TextBlock _searchHint = new() { Text = "캐릭터 · 함선 · 콥 티커 검색", FontSize = 12, Foreground = UiKit.DimBrush, IsHitTestVisible = false, Margin = new Thickness(11, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-    private readonly WrapPanel _categoryRow = new(), _watcherRow = new(), _searchModeRow = new();
+    private readonly WrapPanel _categoryRow = new();
+    private readonly ComboBox _watcherCombo = new() { Width = 150, Margin = new Thickness(8, 0, 0, 0), Visibility = Visibility.Collapsed };
+    private bool _fillingWatchers;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(1000) };
     private readonly HashSet<EventCategory> _categories = [.. Enum.GetValues<EventCategory>()];
-    private readonly HashSet<string> _searchFields = ["name", "ship", "corp"];
     private string _watcherFilter = "";
     private bool _exact;
     private string _signature = "\0";
@@ -266,57 +267,57 @@ internal sealed class CctvView : UserControl
     {
         var box = new StackPanel();
         box.Children.Add(UiKit.SectionHead("감지 타임라인"));
-        box.Children.Add(UiKit.Dim("속도 변화와 화면 이탈을 결합한 판정입니다. 줄을 누르면 판정 근거(원본 이미지, 이전 프레임, 인식 영역)를 볼 수 있습니다.", 12));
-        _categoryRow.Margin = new Thickness(0, 10, 0, 0);
-        box.Children.Add(_categoryRow);
-        box.Children.Add(_watcherRow);
+        box.Children.Add(UiKit.Dim("줄을 누르면 판정 근거(원본 이미지, 이전 프레임, 인식 영역)를 볼 수 있습니다.", 12));
 
-        var searchRow = new WrapPanel();
-        var searchBox = new Grid { Margin = new Thickness(0, 0, 10, 6) };
+        // 한 줄: 검색창 · 정확히 일치 · (눈깔이 둘 이상이면) 눈깔 선택
+        var bar = new DockPanel { Margin = new Thickness(0, 10, 0, 8) };
+        DockPanel.SetDock(_watcherCombo, Dock.Right);
+        var exact = new FilterChip("정확히 일치", false, "꺼 두면 입력한 글자가 들어 있는 것을 모두 찾습니다");
+        exact.Margin = new Thickness(8, 0, 0, 0);
+        exact.Toggled += on => { _exact = on; RebuildTimeline(); };
+        DockPanel.SetDock(exact, Dock.Right);
+        bar.Children.Add(_watcherCombo); bar.Children.Add(exact);
+        var searchBox = new Grid();
+        _search.Width = double.NaN;
         searchBox.Children.Add(_search); searchBox.Children.Add(_searchHint);
-        searchRow.Children.Add(searchBox);
-        searchRow.Children.Add(_searchModeRow);
-        box.Children.Add(searchRow);
+        bar.Children.Add(searchBox);
+        box.Children.Add(bar);
 
         foreach (var c in Enum.GetValues<EventCategory>())
         {
             var chip = new FilterChip(EventPresentation.CategoryLabel(c), true);
+            chip.Margin = new Thickness(0, 0, 6, 0);
             chip.Toggled += on => { if (on) _categories.Add(c); else _categories.Remove(c); RebuildTimeline(); };
             _categoryRow.Children.Add(chip);
         }
-        var partial = new FilterChip("일부일치", true); var exact = new FilterChip("완전일치", false);
-        partial.Toggled += _ => { _exact = false; partial.SetActive(true); exact.SetActive(false); RebuildTimeline(); };
-        exact.Toggled += _ => { _exact = true; exact.SetActive(true); partial.SetActive(false); RebuildTimeline(); };
-        _searchModeRow.Children.Add(partial); _searchModeRow.Children.Add(exact);
-        foreach (var (key, label) in new[] { ("name", "캐릭터"), ("ship", "함선"), ("corp", "콥 티커") })
-        {
-            var chip = new FilterChip(label, true);
-            chip.Toggled += on =>
-            {
-                if (on) _searchFields.Add(key);
-                else if (_searchFields.Count > 1) _searchFields.Remove(key);
-                else chip.SetActive(true);   // 검색 대상은 최소 하나는 남긴다
-                RebuildTimeline();
-            };
-            _searchModeRow.Children.Add(chip);
-        }
+        box.Children.Add(_categoryRow);
 
-        _timelineList.Margin = new Thickness(0, 6, 0, 0);
+        _watcherCombo.SelectionChanged += (_, _) =>
+        {
+            if (_fillingWatchers) return;
+            _watcherFilter = _watcherCombo.SelectedIndex <= 0 ? "" : _watcherCombo.SelectedItem as string ?? "";
+            RebuildTimeline();
+        };
+
+        _timelineList.Margin = new Thickness(0, 10, 0, 0);
         box.Children.Add(_timelineList);
         return UiKit.Card(box);
     }
 
     private void RebuildFilters(ViewData d)
     {
-        _watcherRow.Children.Clear();
-        if (d.Watchers.Count < 2) { _watcherFilter = ""; return; }
-        foreach (var label in new[] { "" }.Concat(d.Watchers.Select(w => w.Label)))
-        {
-            var chip = new FilterChip(label.Length == 0 ? "전체" : label, _watcherFilter == label);
-            var captured = label;
-            chip.Toggled += _ => { _watcherFilter = captured; RebuildFilters(_data!); RebuildTimeline(); };
-            _watcherRow.Children.Add(chip);
-        }
+        var labels = d.Watchers.Select(w => w.Label).ToList();
+        _watcherCombo.Visibility = labels.Count >= 2 ? Visibility.Visible : Visibility.Collapsed;
+        if (labels.Count < 2) { _watcherFilter = ""; return; }
+        var current = _watcherCombo.Items.Cast<string>().Skip(1).ToList();
+        if (current.SequenceEqual(labels)) return;   // 눈깔 목록이 같으면 선택을 그대로 둔다
+        _fillingWatchers = true;
+        _watcherCombo.Items.Clear();
+        _watcherCombo.Items.Add("전체 눈깔");
+        foreach (var l in labels) _watcherCombo.Items.Add(l);
+        _watcherCombo.SelectedIndex = Math.Max(0, labels.IndexOf(_watcherFilter) + 1);
+        if (!labels.Contains(_watcherFilter)) _watcherFilter = "";
+        _fillingWatchers = false;
     }
 
     private static string Norm(string? v) => System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace((v ?? "").ToLowerInvariant().Replace("[", "").Replace("]", ""), @"\*+$", ""), @"\s+", " ").Trim();
@@ -326,7 +327,8 @@ internal sealed class CctvView : UserControl
         var needle = Norm(_search.Text);
         if (needle.Length == 0) return true;
         bool Hit(string? v) { var h = Norm(v); return _exact ? h == needle : h.Contains(needle); }
-        return (_searchFields.Contains("name") && Hit(e.Character)) || (_searchFields.Contains("ship") && Hit(e.Ship)) || (_searchFields.Contains("corp") && Hit(e.Corporation is null ? null : canonical(e.Corporation)));
+        // 캐릭터, 함선, 콥 티커 어디에 있어도 찾는다.
+        return Hit(e.Character) || Hit(e.Ship) || Hit(e.Corporation is null ? null : canonical(e.Corporation));
     }
 
     private void RebuildTimeline()
