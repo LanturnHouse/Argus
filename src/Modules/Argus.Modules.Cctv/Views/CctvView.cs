@@ -265,8 +265,8 @@ internal sealed class CctvView : UserControl
         {
             var row = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
             var remove = UiKit.Button("제거", () => RemoveWatcher(w), "GhostButton"); remove.Margin = new Thickness(6, 0, 0, 0); remove.Padding = new Thickness(10, 4, 10, 4);
-            var edit = UiKit.Button("영역 수정", () => EditWatcher(w.Id)); edit.Margin = new Thickness(6, 0, 0, 0); edit.Padding = new Thickness(10, 4, 10, 4);
-            edit.ToolTip = "저장하면 이 캐릭터의 분석 결과를 모두 지우고 처음부터 다시 분석합니다. 중간에 위치만 바뀐 경우에는 일시중지 → 재시작을 쓰세요.";
+            var edit = UiKit.Button("수정", () => EditWatcher(w.Id)); edit.Margin = new Thickness(6, 0, 0, 0); edit.Padding = new Thickness(10, 4, 10, 4);
+            edit.ToolTip = "이름만 바꾸면 분석 결과는 그대로입니다. 캐릭터 · 타입 · 인식 영역을 바꿔 저장하면 처음부터 다시 분석하니, 중간에 위치만 바뀐 경우에는 일시중지 → 재시작을 쓰세요.";
             var pause = w.Paused
                 ? UiKit.Button("재시작…", () => ResumeWindow.ShowFor(Window.GetWindow(this), _svc, w), "PrimaryButton")
                 : UiKit.Button("일시중지", () => _svc.PauseWatching(w.Character));

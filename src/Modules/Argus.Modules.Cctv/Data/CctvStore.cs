@@ -116,11 +116,19 @@ public sealed class CctvStore : IDisposable
             .Select(r => new RegionDef(Names.ToRegionKind(r.Str("kind")!), r.Dbl("x") ?? 0, r.Dbl("y") ?? 0, r.Dbl("width") ?? 0, r.Dbl("height") ?? 0))];
 
     /// <summary>
-    /// 감시 눈깔을 저장한다. 이미 있으면 갱신. 같은 캐릭터의 분석 결과는 모두 지우고 그 캐릭터의 이미지를 처음부터 다시 분석하게 한다
-    /// (영역이 바뀌면 이전 판정이 맞지 않으므로).
+    /// 감시 눈깔을 저장한다. 이미 있으면 갱신. 캐릭터 · 감시 타입 · 인식 영역이 바뀌었으면 같은 캐릭터의 분석 결과를 모두 지우고 그 캐릭터의 이미지를 처음부터 다시 분석하게 한다
+    /// (영역이 바뀌면 이전 판정이 맞지 않으므로). 이름만 바뀐 경우에는 분석 결과를 그대로 둔다.
     /// </summary>
     public void SaveWatcher(Watcher watcher)
     {
+        // 이름 등 인식 결과에 영향이 없는 값만 바뀌었으면 분석 결과를 건드리지 않는다 (캐릭터 · 감시 타입 · 인식 영역이 그대로).
+        var existing = ListWatchers().FirstOrDefault(w => w.Id == watcher.Id);
+        if (existing != null && existing.RegionVersion >= 2 && existing.Character == watcher.Character && existing.WatchType == watcher.WatchType && SameRegions(existing.Regions, watcher.Regions))
+        {
+            Db.Exec("UPDATE watchers SET label = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", watcher.Label, watcher.Enabled ? 1 : 0, watcher.Id);
+            return;
+        }
+
         Db.Transaction(() =>
         {
             var previous = Db.One("SELECT character_name FROM watchers WHERE id = ?", watcher.Id);
