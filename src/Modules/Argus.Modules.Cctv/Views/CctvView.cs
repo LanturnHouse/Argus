@@ -186,7 +186,7 @@ internal sealed class CctvView : UserControl
         return row;
     }
 
-    // ---------- 분석 설정 (비전 모델 · 폴더 · 기록 초기화) ----------
+    // ---------- 분석 설정 (비전 모델 · 분석 기록 초기화) ----------
 
     private CctvSettingsView? _settingsView;
     private bool _settingsOpen;
@@ -197,7 +197,7 @@ internal sealed class CctvView : UserControl
         var arrow = UiKit.Text("▾", 13, FontWeights.SemiBold, UiKit.DimBrush);
         var title = new StackPanel { Orientation = Orientation.Horizontal };
         title.Children.Add(UiKit.Text("분석 설정", 13.5, FontWeights.SemiBold));
-        title.Children.Add(UiKit.Dim("비전 모델 · 스크린샷 폴더 · 분석 기록 초기화", 12, new Thickness(12, 0, 0, 0), false));
+        title.Children.Add(UiKit.Dim("비전 모델 · 분석 기록 초기화", 12, new Thickness(12, 0, 0, 0), false));
         var head = new DockPanel();
         DockPanel.SetDock(arrow, Dock.Right);
         head.Children.Add(arrow); head.Children.Add(title);

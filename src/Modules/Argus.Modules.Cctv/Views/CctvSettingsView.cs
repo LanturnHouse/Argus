@@ -7,7 +7,7 @@ using Argus.Ui;
 
 namespace Argus.Modules.Cctv;
 
-/// <summary>설정 > CCTV: 비전 모델(Ollama) 서버와 모델, 모델을 내리는 시점, 이미지 폴더, 분석 기록.</summary>
+/// <summary>분석 설정. 기본: 비전 모델(Ollama) 서버와 모델, 모델을 내리는 시점, 분석 기록 초기화 (분석 탭에 둔다). folderOnly: 분석할 스크린샷 폴더만 (설정 탭 CCTV 아래).</summary>
 internal sealed class CctvSettingsView : UserControl
 {
     private readonly CctvService _svc;
@@ -23,13 +23,15 @@ internal sealed class CctvSettingsView : UserControl
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(3) };
     private bool _loading;
 
-    public CctvSettingsView(CctvService svc)
+    private readonly bool _folderOnly;
+
+    public CctvSettingsView(CctvService svc, bool folderOnly = false)
     {
-        _svc = svc;
+        _svc = svc; _folderOnly = folderOnly;
         _testResult.SetResourceReference(StyleProperty, "Dim"); _loaded.SetResourceReference(StyleProperty, "Dim"); _data.SetResourceReference(StyleProperty, "Dim");
 
         var root = new StackPanel();
-        root.Children.Add(UiKit.Section("모델 올리기 · 내리기",
+        if (!folderOnly) root.Children.Add(UiKit.Section("모델 올리기 · 내리기",
             "읽을 스크린샷이 있을 때만 모델을 올리고, 대기가 끝나면 아래 유예 시간 뒤에 내립니다. 분석을 끄거나 Argus 를 닫아도 내립니다.", new Border()));
 
         var hostRow = new DockPanel();
@@ -37,36 +39,47 @@ internal sealed class CctvSettingsView : UserControl
         DockPanel.SetDock(test, Dock.Right);
         hostRow.Children.Add(test); hostRow.Children.Add(_host);
         var hostBox = new StackPanel(); hostBox.Children.Add(hostRow); hostBox.Children.Add(_testResult);   // 결과가 생기면 위쪽 여백을 준다 (빈 줄이 공간을 차지하지 않게)
-        root.Children.Add(UiKit.Section("Ollama 서버 주소", "비전 모델을 실행하는 Ollama 서버 주소입니다 (기본 http://127.0.0.1:11434).", hostBox));
+        if (!folderOnly)
+        {
+            root.Children.Add(UiKit.Section("Ollama 서버 주소", "비전 모델을 실행하는 Ollama 서버 주소입니다 (기본 http://127.0.0.1:11434).", hostBox));
 
-        var modelRow = new DockPanel();
-        var refresh = UiKit.Button("목록 불러오기", async () => await LoadModelsAsync()); refresh.Margin = new Thickness(8, 0, 0, 0);
-        DockPanel.SetDock(refresh, Dock.Right); DockPanel.SetDock(_modelPick, Dock.Right);
-        _modelPick.Width = 200; _modelPick.MinWidth = 0; _model.MinWidth = 0;
-        modelRow.Children.Add(refresh); modelRow.Children.Add(_modelPick); modelRow.Children.Add(_model);
-        root.Children.Add(UiKit.Section("비전 모델", "이미지를 읽을 수 있는 비전 모델이어야 합니다. 권장: qwen2.5vl:7b (그래픽 메모리 약 6GB). 메모리를 넘는 큰 모델은 매우 느려집니다.", modelRow));
-        root.Children.Add(UiKit.Section("모델 응답 대기 시간", "이만큼 기다려도 답이 없으면 그 이미지를 잠시 뒤 다시 시도합니다.", _timeout));
-        root.Children.Add(UiKit.Section("대기가 끝난 뒤 모델을 내리기까지", "읽을 이미지가 모두 끝난 뒤 이 시간 동안 새 이미지가 없으면 모델을 내립니다. 0 이면 바로 내립니다.", _idle));
+            var modelRow = new DockPanel();
+            var refresh = UiKit.Button("목록 불러오기", async () => await LoadModelsAsync()); refresh.Margin = new Thickness(8, 0, 0, 0);
+            DockPanel.SetDock(refresh, Dock.Right); DockPanel.SetDock(_modelPick, Dock.Right);
+            _modelPick.Width = 200; _modelPick.MinWidth = 0; _model.MinWidth = 0;
+            modelRow.Children.Add(refresh); modelRow.Children.Add(_modelPick); modelRow.Children.Add(_model);
+            root.Children.Add(UiKit.Section("비전 모델", "이미지를 읽을 수 있는 비전 모델이어야 합니다. 권장: qwen2.5vl:7b (그래픽 메모리 약 6GB). 메모리를 넘는 큰 모델은 매우 느려집니다.", modelRow));
+            root.Children.Add(UiKit.Section("모델 응답 대기 시간", "이만큼 기다려도 답이 없으면 그 이미지를 잠시 뒤 다시 시도합니다.", _timeout));
+            root.Children.Add(UiKit.Section("대기가 끝난 뒤 모델을 내리기까지", "읽을 이미지가 모두 끝난 뒤 이 시간 동안 새 이미지가 없으면 모델을 내립니다. 0 이면 바로 내립니다.", _idle));
 
-        var loadedRow = new StackPanel();
-        var unload = UiKit.Button("지금 모델 내리기", async () => { await _svc.Vision.UnloadModelAsync(_svc.Settings.Vision); await Task.Delay(500); await RefreshLoadedAsync(); });
-        loadedRow.Children.Add(_loaded); unload.Margin = new Thickness(0, 6, 0, 0); unload.HorizontalAlignment = HorizontalAlignment.Left; loadedRow.Children.Add(unload);
-        root.Children.Add(UiKit.Section("지금 올라가 있는 모델", "Ollama 가 그래픽 메모리에 올려 둔 모델입니다.", loadedRow));
+            var loadedRow = new StackPanel();
+            var unload = UiKit.Button("지금 모델 내리기", async () => { await _svc.Vision.UnloadModelAsync(_svc.Settings.Vision); await Task.Delay(500); await RefreshLoadedAsync(); });
+            loadedRow.Children.Add(_loaded); unload.Margin = new Thickness(0, 6, 0, 0); unload.HorizontalAlignment = HorizontalAlignment.Left; loadedRow.Children.Add(unload);
+            root.Children.Add(UiKit.Section("지금 올라가 있는 모델", "Ollama 가 그래픽 메모리에 올려 둔 모델입니다.", loadedRow));
+        }
 
         var folderRow = new DockPanel();
         var btns = new StackPanel { Orientation = Orientation.Horizontal }; DockPanel.SetDock(btns, Dock.Right);
         btns.Children.Add(UiKit.Button("변경", PickFolder)); btns.Children.Add(UiKit.Button("자동", () => { _svc.Settings.ImageFolder = ""; Save(); Load(); })); btns.Children.Add(UiKit.Button("열기", () => { if (Directory.Exists(_svc.ImageFolder)) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{_svc.ImageFolder}\"") { UseShellExecute = true }); }));
         ((Button)btns.Children[0]).Margin = new Thickness(8, 0, 0, 0);
         folderRow.Children.Add(btns); folderRow.Children.Add(_folder);
-        root.Children.Add(UiKit.Section("분석할 스크린샷 폴더", "'자동'이면 CCTV 의 저장 폴더를 씁니다. CCTV{날짜시각}_{캐릭터}.png 파일만 분석합니다.", folderRow));
+        if (folderOnly) root.Children.Add(UiKit.Section("분석할 스크린샷 폴더", "'자동'이면 CCTV 의 저장 폴더를 씁니다. CCTV{날짜시각}_{캐릭터}.png 파일만 분석합니다.", folderRow));
 
-        var dataBox = new StackPanel();
-        dataBox.Children.Add(_data);
-        var reset = UiKit.Button("분석 기록 초기화", ResetData, "DangerButton"); reset.Margin = new Thickness(0, 8, 0, 0); reset.HorizontalAlignment = HorizontalAlignment.Left; dataBox.Children.Add(reset);
-        root.Children.Add(UiKit.Section("분석 기록", "이벤트와 이미지 목록을 지우고 처음부터 다시 분석합니다. 원본 PNG 는 지우지 않습니다.", dataBox));
+        if (!folderOnly)
+        {
+            var dataBox = new StackPanel();
+            dataBox.Children.Add(_data);
+            var reset = UiKit.Button("분석 기록 초기화", ResetData, "DangerButton"); reset.Margin = new Thickness(0, 8, 0, 0); reset.HorizontalAlignment = HorizontalAlignment.Left; dataBox.Children.Add(reset);
+            root.Children.Add(UiKit.Section("분석 기록", "이벤트와 이미지 목록을 지우고 처음부터 다시 분석합니다. 원본 PNG 는 지우지 않습니다.", dataBox));
+        }
 
         Content = root;
-        Loaded += async (_, _) => { Load(); _timer.Start(); await RefreshLoadedAsync(); await LoadModelsAsync(quiet: true); };
+        Loaded += async (_, _) =>
+        {
+            Load();
+            if (_folderOnly) return;   // 폴더만 보여 줄 때는 모델 서버를 묻지 않는다
+            _timer.Start(); await RefreshLoadedAsync(); await LoadModelsAsync(quiet: true);
+        };
         Unloaded += (_, _) => _timer.Stop();
         _timer.Tick += async (_, _) => { await RefreshLoadedAsync(); RefreshData(); };
 

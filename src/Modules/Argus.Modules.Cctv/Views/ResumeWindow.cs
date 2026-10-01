@@ -19,49 +19,40 @@ internal static class ResumeWindow
         var host = new ContentControl();
         Window window = null!;
 
+        var all = before.Concat(after).ToList();   // 확대해서 넘겨 볼 순서 (일시중지 시각 앞 → 뒤)
+
         UIElement PickerPage()
         {
             var list = new ListBox { HorizontalContentAlignment = HorizontalAlignment.Stretch, BorderThickness = new Thickness(0), Background = Brushes.Transparent };
             VirtualizingPanel.SetIsVirtualizing(list, true);
             ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
-            var entries = new List<(ListBoxItem Item, ImageRow? Image)>();
 
-            ListBoxItem Add(UIElement content, ImageRow? image, bool selectable = true)
+            ListBoxItem Add(UIElement content, int? imageIndex)
             {
-                var item = new ListBoxItem { Content = content, Padding = new Thickness(8, 6, 8, 6), IsHitTestVisible = selectable, Focusable = selectable };
-                list.Items.Add(item); entries.Add((item, image));
+                var item = new ListBoxItem { Content = content, Padding = new Thickness(8, 6, 8, 6), Cursor = imageIndex != null ? System.Windows.Input.Cursors.Hand : null, IsHitTestVisible = imageIndex != null, Focusable = false };
+                if (imageIndex is { } i) item.PreviewMouseLeftButtonUp += (_, _) => { list.SelectedItem = null; host.Content = ViewerPage(i); };   // 클릭하면 확대해서 확인한다
+                list.Items.Add(item);
                 return item;
             }
 
-            // '지금 이후' 는 목록 위에 따로 고정해 둔다 (목록은 일시중지 시각 근처로 스크롤돼 열린다).
-            var nowBox = new RowButton(NowRow()) { Margin = new Thickness(0, 0, 0, 8), Padding = new Thickness(10, 8, 10, 8), BorderThickness = new Thickness(1) };
-            void ShowSelection() { nowBox.BorderBrush = picked == null ? UiKit.Accent : Brushes.Transparent; nowBox.Background = picked == null ? UiKit.AccentSoft : UiKit.Panel2; }
-            ListBoxItem? separator = null;
-            foreach (var (im, status) in before.Select(b => (b.Image, b.Status))) Add(ImageRow(svc, im, status), im);
-            separator = Add(UiKit.Text($"━━  감시를 일시중지한 시각  {(pausedAt.Length >= 19 ? pausedAt.Substring(11, 8) : pausedAt)}  ━━", 12, FontWeights.SemiBold, UiKit.Warn, new Thickness(0, 6, 0, 6)), null, selectable: false);
-            foreach (var (im, status) in after.Select(a => (a.Image, a.Status))) Add(ImageRow(svc, im, status), im);
-            nowBox.MouseEnter += (_, _) => { if (picked != null) nowBox.Background = UiKit.Panel3; };
-            nowBox.MouseLeave += (_, _) => ShowSelection();
-            nowBox.Clicked += () => { picked = null; list.SelectedItem = null; ShowSelection(); };
-            ShowSelection();
-            list.SelectionChanged += (_, _) =>
-            {
-                var chosen = entries.FirstOrDefault(x => x.Item == list.SelectedItem);
-                if (chosen.Item == null) return;
-                if (chosen.Item == separator) { list.SelectedItem = entries.FirstOrDefault(x => x.Image == picked).Item; return; }
-                picked = chosen.Image; ShowSelection();
-            };
-            list.Loaded += (_, _) => { if (separator != null) list.ScrollIntoView(separator); };
+            // '지금 이후' 는 목록 위에 따로 고정해 둔다 (목록은 일시중지 시각 근처로 스크롤돼 열린다). 누르면 바로 인식 영역 확인으로 간다.
+            var nowBox = new RowButton(NowRow()) { Margin = new Thickness(0, 0, 0, 8), Padding = new Thickness(10, 8, 10, 8), BorderThickness = new Thickness(1), BorderBrush = UiKit.Accent, Background = UiKit.AccentSoft };
+            nowBox.Clicked += () => { picked = null; host.Content = RegionPage(); };
 
-            var next = UiKit.Button("다음: 인식 영역 확인  →", () => host.Content = RegionPage(), "PrimaryButton");
+            int index = 0;
+            foreach (var b in before) Add(ImageRow(svc, b.Image, b.Status), index++);
+            var separator = Add(UiKit.Text($"━━  감시를 일시중지한 시각  {(pausedAt.Length >= 19 ? pausedAt.Substring(11, 8) : pausedAt)}  ━━", 12, FontWeights.SemiBold, UiKit.Warn, new Thickness(0, 6, 0, 6)), null);
+            foreach (var a in after) Add(ImageRow(svc, a.Image, a.Status), index++);
+            list.Loaded += (_, _) => list.ScrollIntoView(separator);
+
             var cancel = UiKit.Button("취소", () => window.Close(), "GhostButton");
             var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
-            footer.Children.Add(cancel); footer.Children.Add(next);
+            footer.Children.Add(cancel);
 
             var root = new DockPanel { Margin = new Thickness(22, 18, 22, 18) };
             var head = new StackPanel();
             head.Children.Add(UiKit.Text($"감시 재시작 — {watcher.Label}", 18, FontWeights.Bold));
-            head.Children.Add(UiKit.Dim("자리를 잡은 뒤 처음 보이는 스크린샷을 고르세요. 그 스크린샷부터 다시 분석합니다. 목록의 위쪽은 일시중지 전, 아래쪽은 일시중지 뒤에 찍힌 것입니다.", 12, new Thickness(0, 2, 0, 12)));
+            head.Children.Add(UiKit.Dim("자리를 잡은 뒤 처음 보이는 스크린샷을 찾으세요. 목록에서 스크린샷을 누르면 크게 보면서 이전/다음으로 넘겨 볼 수 있고, 가운데 '확인'으로 그 스크린샷부터 다시 분석합니다. 목록의 위쪽은 일시중지 전, 아래쪽은 일시중지 뒤에 찍힌 것입니다.", 12, new Thickness(0, 2, 0, 12)));
             head.Children.Add(nowBox);
             DockPanel.SetDock(head, Dock.Top);
             DockPanel.SetDock(footer, Dock.Bottom);
@@ -69,11 +60,62 @@ internal static class ResumeWindow
             return root;
         }
 
+        // 확대 보기: 스크린샷 한 장을 크게 보여 주고 < 확인 > 로 이전 · 선택 · 다음을 한다 (← → Enter Esc 도 된다).
+        UIElement ViewerPage(int startIndex)
+        {
+            var index = startIndex;
+            var image = new Image { Stretch = Stretch.Uniform };
+            var title = UiKit.Text("", 15, FontWeights.Bold);
+            var meta = UiKit.Dim("", 12, new Thickness(0, 2, 0, 8), false);
+            var prev = UiKit.Button("<", () => { }, null, 64); var next = UiKit.Button(">", () => { }, null, 64);
+            var ok = UiKit.Button("확인", () => { }, "PrimaryButton", 200);
+            var list = UiKit.Button("← 목록", () => host.Content = PickerPage(), "GhostButton");
+            foreach (var b in new[] { prev, next, ok }) { b.Padding = new Thickness(0, 9, 0, 9); b.Margin = new Thickness(6, 0, 6, 0); b.FontSize = 15; }
+
+            void Show()
+            {
+                var it = all[index];
+                image.Source = DialogKit.LoadImage(it.Image.FilePath);
+                title.Text = $"{it.Image.CapturedAt.Substring(11, 12)}   ({index + 1} / {all.Count})";
+                var state = it.Status switch { "processed" => "분석됨", "skipped" => "건너뜀", "failed" => "실패", _ => "대기" };
+                var side = string.CompareOrdinal(it.Image.CapturedAt, pausedAt) <= 0 ? "일시중지 전" : "일시중지 뒤";
+                meta.Text = $"{it.Image.Filename}  ·  {state}  ·  {side}";
+                prev.IsEnabled = index > 0; next.IsEnabled = index < all.Count - 1;
+            }
+            void Move(int d) { var n = index + d; if (n < 0 || n >= all.Count) return; index = n; Show(); }
+            void Choose() { picked = all[index].Image; host.Content = RegionPage(); }
+            prev.Click += (_, _) => Move(-1); next.Click += (_, _) => Move(1); ok.Click += (_, _) => Choose();
+            Show();
+
+            var bar = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
+            bar.Children.Add(prev); bar.Children.Add(ok); bar.Children.Add(next);
+            var footer = new Grid { Margin = new Thickness(0, 4, 0, 0) };
+            footer.Children.Add(bar);
+            list.HorizontalAlignment = HorizontalAlignment.Left; list.VerticalAlignment = VerticalAlignment.Center; list.Margin = new Thickness(0, 12, 0, 0);
+            footer.Children.Add(list);
+
+            var head = new StackPanel();
+            head.Children.Add(title); head.Children.Add(meta);
+            var frame = new Border { Background = Brushes.Black, CornerRadius = new CornerRadius(6), Child = image };
+            var root = new DockPanel { Margin = new Thickness(22, 18, 22, 18), Focusable = true };
+            DockPanel.SetDock(head, Dock.Top); DockPanel.SetDock(footer, Dock.Bottom);
+            root.Children.Add(head); root.Children.Add(footer); root.Children.Add(frame);
+            root.PreviewKeyDown += (_, e) =>
+            {
+                if (e.Key == System.Windows.Input.Key.Left) { Move(-1); e.Handled = true; }
+                else if (e.Key == System.Windows.Input.Key.Right) { Move(1); e.Handled = true; }
+                else if (e.Key == System.Windows.Input.Key.Enter) { Choose(); e.Handled = true; }
+                else if (e.Key == System.Windows.Input.Key.Escape) { host.Content = PickerPage(); e.Handled = true; }
+            };
+            root.Loaded += (_, _) => root.Focus();
+            return root;
+        }
+
         UIElement NowRow()
         {
             var sp = new StackPanel { Margin = new Thickness(2, 4, 2, 4) };
             sp.Children.Add(UiKit.Text("지금 이후에 촬영되는 스크린샷부터", 13.5, FontWeights.SemiBold, UiKit.AccentText));
-            sp.Children.Add(UiKit.Dim("가장 흔한 선택입니다. 쌓여 있는 이전 스크린샷은 건너뛰고, 지금부터 새로 찍히는 것부터 분석합니다 (기본 선택).", 12, new Thickness(0, 2, 0, 0)));
+            sp.Children.Add(UiKit.Dim("가장 흔한 선택입니다. 쌓여 있는 이전 스크린샷은 건너뛰고, 지금부터 새로 찍히는 것부터 분석합니다. 누르면 바로 인식 영역 확인으로 넘어갑니다.", 12, new Thickness(0, 2, 0, 0)));
             return sp;
         }
 
