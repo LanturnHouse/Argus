@@ -12,8 +12,11 @@ public sealed class Analyzer(CctvStore store)
 {
     /// <summary>이 속도(m/s) 이상이면 워프 중으로 본다. 애프터버너를 켠 저속 함선은 수천 m/s 를 넘기 어렵다.</summary>
     public const double WarpSpeedThresholdMps = 10_000;
-    private const int DockConfirmFrames = 2;
-    private const int DockConfirmWindowMs = 10_000;
+    /// <summary>
+    /// 도킹 숫자는 오버뷰보다 늦게 바뀐다(몇 초). 오버뷰에서 행이 생기거나 사라진 뒤 이 시간 안에 숫자가 따라 바뀌면 언독 · 도킹으로 확정한다.
+    /// 숫자가 오버뷰보다 먼저 바뀌는 경우도 같은 시간 안이면 짝지어 준다.
+    /// </summary>
+    private const int DockConfirmWindowMs = 20_000;
 
     private Db Db => store.Db;
 
@@ -82,18 +85,29 @@ public sealed class Analyzer(CctvStore store)
 
     private sealed record DockChange(int RegionIndex, int Before, int After, int Delta);
 
-    private static DockChange? DockCounterChange(List<Observation> current, List<Observation> previous)
+    /// <summary>
+    /// 이번 프레임의 도킹 숫자가 '마지막으로 제대로 읽은 값'에서 바뀌었으면 그 변화를 돌려준다. 직전 프레임에서 숫자를 못 읽었어도(흐림, 오독) 그 앞의 값과 비교한다.
+    /// 숫자가 둘 이상의 도킹 영역에서 동시에 바뀌면 어느 오버뷰 행과 이어지는지 알 수 없으므로 null.
+    /// </summary>
+    private DockChange? DockCounterChange(string watcherId, string captureKey, List<Observation> current)
     {
         var cur = DockReadings(current);
-        var prev = DockReadings(previous);
-        if (cur == null || prev == null || cur.Count != prev.Count) return null;
+        if (cur == null) return null;
         var changes = new List<DockChange>();
         foreach (var (regionIndex, count) in cur)
         {
-            if (!prev.TryGetValue(regionIndex, out var before)) return null;
+            var prev = Db.One("""
+                SELECT json_extract(o.payload_json, '$.fields.dockCount') AS cnt
+                FROM observations o JOIN images i ON i.id = o.image_id
+                WHERE o.watcher_id = ? AND o.region_kind = 'dock' AND i.capture_key < ?
+                  AND json_extract(o.payload_json, '$.regionIndex') = ?
+                  AND json_type(o.payload_json, '$.fields.dockCount') = 'integer' AND json_extract(o.payload_json, '$.fields.dockCount') >= 0
+                ORDER BY i.capture_key DESC LIMIT 1
+                """, watcherId, captureKey, regionIndex);
+            if (prev == null) continue;   // 이 영역은 처음 읽었다: 비교할 값이 없다
+            var before = (int)prev.Long("cnt");
             if (count != before) changes.Add(new DockChange(regionIndex, before, count, count - before));
         }
-        // 카운터가 둘 이상 바뀌면 어느 오버뷰 행과 이어지는지 알 수 없다.
         return changes.Count == 1 ? changes[0] : null;
     }
 
@@ -163,11 +177,36 @@ public sealed class Analyzer(CctvStore store)
     {
         public long Id; public string Time = ""; public string Type = ""; public long? ImageId; public long? PreviousImageId; public JsonObject Details = new();
         public string? DockPending => Details["dockPending"]?.GetValue<string>();
-        public int DockFrames => Details["dockFrames"] is { } n ? (int)n.GetValue<double>() : 0;
     }
 
-    private void ReconcileDockTransitions(string watcherId, ImageRow image, List<Observation> current, List<Observation> previous)
+    /// <summary>도킹 숫자가 바뀌었지만 아직 오버뷰 행과 짝지어지지 않은 몫. 숫자가 오버뷰보다 늦거나 빨라도 시간 안이면 짝지을 수 있게 남겨 둔다.</summary>
+    private sealed class DockCredit
     {
+        public long Id; public string Kind = ""; public int Amount; public string At = ""; public JsonObject Details = new();
+    }
+
+    private void ReconcileDockTransitions(string watcherId, ImageRow image, List<Observation> current)
+    {
+        var capturedAt = ParseTime(image.CapturedAt);
+
+        // 1) 이번 프레임에서 도킹 숫자가 바뀌었으면 몫으로 적어 둔다 (줄었으면 언독 몫, 늘었으면 도킹 몫).
+        if (DockCounterChange(watcherId, image.CaptureKey, current) is { } change)
+        {
+            var details = Obj(("dockCountBefore", change.Before), ("dockCountAfter", change.After), ("dockRegionIndex", change.RegionIndex), ("imageId", image.Id));
+            Db.Exec("INSERT INTO dock_credits (watcher_id, kind, amount, at, details_json) VALUES (?, ?, ?, ?, ?)",
+                watcherId, change.Delta < 0 ? "entry" : "exit", Math.Abs(change.Delta), image.CapturedAt, CctvJson.Compact(details));
+        }
+
+        // 2) 시간이 지난 몫은 버린다 (오버뷰에 나타나지 않은 은닉 함선 등이 만든 변화).
+        var credits = Db.Query("SELECT id, kind, amount, at, details_json FROM dock_credits WHERE watcher_id = ? ORDER BY at, id", watcherId)
+            .Select(r => new DockCredit { Id = r.Long("id"), Kind = r.Str("kind")!, Amount = (int)r.Long("amount"), At = r.Str("at")!, Details = CctvJson.ParseObject(r.Str("details_json")) })
+            .Where(c =>
+            {
+                if ((capturedAt - ParseTime(c.At)).TotalMilliseconds <= DockConfirmWindowMs) return true;
+                Db.Exec("DELETE FROM dock_credits WHERE id = ?", c.Id);
+                return false;
+            }).ToList();
+
         var pending = Db.Query("""
             SELECT id, event_time, event_type, image_id, previous_image_id, details_json FROM events
             WHERE watcher_id = ? AND json_extract(details_json, '$.dockPending') IS NOT NULL ORDER BY event_time, id
@@ -180,61 +219,59 @@ public sealed class Analyzer(CctvStore store)
                 type, explicitImage ? imageId : e.ImageId, explicitImage ? previousImageId : e.PreviousImageId, CctvJson.Compact(details), e.Id);
         }
 
-        var capturedAt = ParseTime(image.CapturedAt);
-        var eligible = pending.Where(e =>
-        {
-            var elapsed = (capturedAt - ParseTime(e.Time)).TotalMilliseconds;
-            return elapsed >= 0 && elapsed <= DockConfirmWindowMs && e.DockFrames <= DockConfirmFrames;
-        }).ToList();
-        var change = DockCounterChange(current, previous);
-        var entries = eligible.Where(e => e.DockPending == "entry").ToList();
-        var exits = eligible.Where(e => e.DockPending == "exit").ToList();
-        var blockers = eligible.Where(e => e.DockPending is "entry_blocker" or "exit_blocker").ToList();
+        bool Expired(PendingEvent e) => (capturedAt - ParseTime(e.Time)).TotalMilliseconds > DockConfirmWindowMs;
+
+        // 3) 시간 안의 대기 중인 이벤트와 몫을 짝짓는다. 대기 중인 수만큼 몫이 모였을 때만 확정한다 (누가 도킹했는지 임의로 고르지 않는다).
+        //    숫자가 오버뷰보다 늦게 바뀌어 몫이 하나씩 따로 들어와도 합쳐서 짝지으므로, 여러 대가 연달아 언독 · 도킹해도 모두 확정된다.
+        var live = pending.Where(e => !Expired(e)).ToList();
+        var blockers = live.Where(e => e.DockPending is "entry_blocker" or "exit_blocker").ToList();   // 코버트 선체: 숫자에 들어가는지 알 수 없다
         var confirmed = new HashSet<long>();
-        var matches = change is { Delta: < 0 } ? entries : change is { Delta: > 0 } ? exits : [];
-        if (change != null && matches.Count == Math.Abs(change.Delta) && matches.Count > 0 && blockers.Count == 0 && !(entries.Count > 0 && exits.Count > 0))
+        if (blockers.Count == 0)
         {
-            foreach (var e in matches)
+            foreach (var (kind, dockPending, newType, reason) in new[] { ("entry", "entry", "undocked", "overview_added_with_dock_decrease"), ("exit", "exit", "docked", "overview_removed_with_dock_increase") })
             {
-                var details = (JsonObject)e.Details.DeepClone();
-                Merge(details, ("verification", "confirmed"), ("reason", change.Delta < 0 ? "overview_added_with_dock_decrease" : "overview_removed_with_dock_increase"),
-                    ("dockCountBefore", change.Before), ("dockCountAfter", change.After), ("dockRegionIndex", change.RegionIndex), ("transitionImageId", e.ImageId), ("confirmedImageId", image.Id));
-                details.Remove("dockPending"); details.Remove("dockFrames");
-                Save(e, change.Delta < 0 ? "undocked" : "docked", details, image.Id, e.ImageId == image.Id ? e.PreviousImageId : e.ImageId, explicitImage: true);
-                confirmed.Add(e.Id);
+                var group = live.Where(e => e.DockPending == dockPending).ToList();
+                var mine = credits.Where(c => c.Kind == kind).ToList();
+                if (group.Count == 0 || mine.Sum(c => c.Amount) < group.Count) continue;
+
+                // 몫을 오래된 것부터 하나씩 쓴다.
+                var queue = new Queue<DockCredit>(mine);
+                foreach (var e in group)
+                {
+                    var credit = queue.Peek();
+                    var d = (JsonObject)e.Details.DeepClone();
+                    Merge(d, ("verification", "confirmed"), ("reason", reason),
+                        ("dockCountBefore", credit.Details["dockCountBefore"]), ("dockCountAfter", credit.Details["dockCountAfter"]), ("dockRegionIndex", credit.Details["dockRegionIndex"]),
+                        ("transitionImageId", e.ImageId), ("confirmedImageId", image.Id));
+                    d.Remove("dockPending");
+                    Save(e, newType, d, image.Id, e.ImageId == image.Id ? e.PreviousImageId : e.ImageId, explicitImage: true);
+                    confirmed.Add(e.Id);
+                    if (--credit.Amount <= 0) { Db.Exec("DELETE FROM dock_credits WHERE id = ?", credit.Id); queue.Dequeue(); }
+                    else Db.Exec("UPDATE dock_credits SET amount = ? WHERE id = ?", credit.Amount, credit.Id);
+                }
             }
         }
 
+        // 4) 시간 안에 숫자가 따라 바뀌지 않은 이벤트는 확정하지 못한 채로 마무리한다 (언독 → 오버뷰 인, 도킹 후보는 그대로 오버뷰 이탈).
         foreach (var e in pending)
         {
-            if (confirmed.Contains(e.Id)) continue;
-            var elapsed = (capturedAt - ParseTime(e.Time)).TotalMilliseconds;
-            var frames = e.DockFrames;
-            if (frames >= DockConfirmFrames || elapsed > DockConfirmWindowMs)
+            if (confirmed.Contains(e.Id) || !Expired(e)) continue;
+            var details = (JsonObject)e.Details.DeepClone();
+            details.Remove("dockPending"); details.Remove("dockFrames");
+            if (e.DockPending == "entry")
             {
-                var details = (JsonObject)e.Details.DeepClone();
-                details.Remove("dockPending"); details.Remove("dockFrames");
-                if (e.DockPending == "entry")
-                {
-                    details["reason"] = "dock_count_decrease_not_confirmed";
-                    details.Remove("verification");
-                    Save(e, "appeared", details);
-                    Db.Exec("UPDATE current_objects SET entry_type = 'appeared' WHERE watcher_id = ? AND entry_event_id = ?", watcherId, e.Id);
-                }
-                else
-                {
-                    if (e.DockPending == "exit" && e.Type == "disappeared")
-                    {
-                        details["reason"] = "dock_count_increase_not_confirmed";
-                        details.Remove("verification");
-                    }
-                    Save(e, e.Type, details);
-                }
+                details["reason"] = "dock_count_decrease_not_confirmed";
+                details.Remove("verification");
+                Save(e, "appeared", details);
+                Db.Exec("UPDATE current_objects SET entry_type = 'appeared' WHERE watcher_id = ? AND entry_event_id = ?", watcherId, e.Id);
             }
             else
             {
-                var details = (JsonObject)e.Details.DeepClone();
-                details["dockFrames"] = frames + 1;
+                if (e.DockPending == "exit" && e.Type == "disappeared")
+                {
+                    details["reason"] = "dock_count_increase_not_confirmed";
+                    details.Remove("verification");
+                }
                 Save(e, e.Type, details);
             }
         }
@@ -452,7 +489,7 @@ public sealed class Analyzer(CctvStore store)
         }
 
     Docking:
-        if (watchType == WatchType.Structure) ReconcileDockTransitions(watcherId, image, currentObservations, previous.Observations);
+        if (watchType == WatchType.Structure) ReconcileDockTransitions(watcherId, image, currentObservations);
     }
 
     // ---------- 현재 시그니처 (프로빙) ----------

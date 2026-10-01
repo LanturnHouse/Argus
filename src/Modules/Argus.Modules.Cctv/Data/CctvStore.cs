@@ -59,6 +59,9 @@ public sealed class CctvStore : IDisposable
               distance_text TEXT, confidence REAL, image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
               first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, missing_count INTEGER NOT NULL DEFAULT 0,
               PRIMARY KEY (watcher_id, signature_id));
+            CREATE TABLE IF NOT EXISTS dock_credits (
+              id INTEGER PRIMARY KEY AUTOINCREMENT, watcher_id TEXT NOT NULL REFERENCES watchers(id) ON DELETE CASCADE,
+              kind TEXT NOT NULL, amount INTEGER NOT NULL, at TEXT NOT NULL, details_json TEXT);
             CREATE INDEX IF NOT EXISTS idx_images_folder_capture ON images(folder_path, capture_key DESC);
             CREATE INDEX IF NOT EXISTS idx_images_character_capture ON images(character_name, capture_key DESC);
             CREATE INDEX IF NOT EXISTS idx_images_status_capture ON images(processing_status, capture_key);
@@ -109,7 +112,7 @@ public sealed class CctvStore : IDisposable
                 var r = watcher.Regions[i];
                 Db.Exec("INSERT INTO regions (watcher_id, kind, x, y, width, height, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)", watcher.Id, r.Kind.Db(), r.X, r.Y, r.W, r.H, i);
             }
-            foreach (var table in new[] { "events", "observations", "current_objects", "current_signatures" })
+            foreach (var table in new[] { "events", "observations", "current_objects", "current_signatures", "dock_credits" })
                 Db.Exec($"DELETE FROM {table} WHERE watcher_id IN (SELECT id FROM watchers WHERE character_name = ?)", watcher.Character);
             Db.Exec("UPDATE images SET processing_status = 'pending' WHERE character_name = ?", watcher.Character);
         });
@@ -117,7 +120,7 @@ public sealed class CctvStore : IDisposable
 
     private void ClearWatcherData(string watcherId)
     {
-        foreach (var table in new[] { "events", "observations", "current_objects", "current_signatures" })
+        foreach (var table in new[] { "events", "observations", "current_objects", "current_signatures", "dock_credits" })
             Db.Exec($"DELETE FROM {table} WHERE watcher_id = ?", watcherId);
     }
 
@@ -146,7 +149,7 @@ public sealed class CctvStore : IDisposable
     {
         Db.Transaction(() =>
         {
-            foreach (var table in new[] { "events", "observations", "current_objects", "current_signatures", "images" }) Db.Exec($"DELETE FROM {table}");
+            foreach (var table in new[] { "events", "observations", "current_objects", "current_signatures", "dock_credits", "images" }) Db.Exec($"DELETE FROM {table}");
         });
     }
 
