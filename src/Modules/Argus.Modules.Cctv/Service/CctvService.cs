@@ -282,8 +282,12 @@ public sealed class CctvService : IDisposable
 
     private async Task ProcessImageAsync(ImageRow image, CancellationToken ct)
     {
-        var regions = Store.WatcherRegions(image.Character);
-        if (regions.Count == 0) { Store.CompleteImage(image.Id, []); return; }   // 읽을 영역이 없으면 대기로 남겨 두지 않는다 (같은 이미지를 계속 집어 들게 된다)
+        var regions = Store.WatcherRegions(image.Character, image.CaptureKey);   // 그 이미지를 찍을 때 유효했던 영역
+        if (regions.Count == 0)
+        {
+            if (Store.IsPaused(image.Character)) { Store.MarkPending(image.Id); return; }   // 일시중지 중: 건드리지 않는다
+            Store.CompleteImage(image.Id, []); return;
+        }   // 읽을 영역이 없으면 대기로 남겨 두지 않는다 (같은 이미지를 계속 집어 들게 된다)
         Store.MarkProcessing(image.Id);
         lock (_lock) { _processing = image.Filename; if (IsError) { Message = null; IsError = false; } }
         Changed?.Invoke();
@@ -305,7 +309,7 @@ public sealed class CctvService : IDisposable
 
     private void PublishNewEvents(long afterId)
     {
-        var fresh = Store.EventsAfter(afterId);
+        var fresh = Store.EventsAfter(afterId).Where(e => !CctvStore.IsMarker(e.Type)).ToList();
         if (fresh.Count == 0) return;
         _ctx.Events.Publish(new CctvEventsDetected([.. fresh.Select(e => new CctvDetection(e.Id, e.Type, e.Time, e.Character, e.Corporation, e.Ship, e.WatcherLabel ?? ""))]));
     }
@@ -319,6 +323,48 @@ public sealed class CctvService : IDisposable
     /// <summary>이 캐릭터의 가장 최근 스크린샷 id (영역 지정에 쓴다). 없으면 null.</summary>
     public long? LatestImageId(string character) =>
         Store.CharacterStats(ImageFolder).FirstOrDefault(s => s.Name == character) is { LatestImageId: > 0 } st ? st.LatestImageId : null;
+
+    // ---------- 감시 일시중지 · 재시작 ----------
+
+    /// <summary>이 캐릭터의 감시(분석)를 일시중지한다. 눈깔을 옮기거나 영역을 바꾸는 동안 엉뚱한 화면이 분석되지 않게 한다. 스크린샷은 계속 쌓인다.</summary>
+    public bool PauseWatching(string character)
+    {
+        var ok = Store.PauseCharacter(character, DateTime.Now);
+        if (ok) Changed?.Invoke();
+        return ok;
+    }
+
+    /// <summary>재시작 지점 후보: 일시중지 시각과 그 전후 스크린샷들.</summary>
+    internal (string PausedAt, List<CctvStore.RestartImage> Before, List<CctvStore.RestartImage> After) RestartCandidates(Watcher watcher)
+    {
+        var pausedAt = watcher.PausedAt ?? DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
+        var (before, after) = Store.ImagesAround(watcher.Character, CctvStore.KeyOf(pausedAt));
+        return (pausedAt, before, after);
+    }
+
+    /// <summary>
+    /// 감시를 다시 시작한다. startImage 부터(null 이면 지금 이후에 찍히는 스크린샷부터) 주어진 영역으로 분석을 이어 간다.
+    /// 그 앞의 분석 결과는 그대로 둔다. 이미 분석한 이미지부터 다시 시작하면(되감기) 그 지점까지의 상태를 저장된 관측으로 복원한다.
+    /// </summary>
+    internal async Task ResumeWatchingAsync(Watcher watcher, ImageRow? startImage, IReadOnlyList<RegionDef> regions)
+    {
+        string startTime, startKey;
+        if (startImage != null) { startTime = startImage.CapturedAt; startKey = startImage.CaptureKey; }
+        else { startTime = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture); startKey = CctvStore.KeyOf(startTime); }
+
+        var plan = Store.ApplyRestartPoint(watcher.Character, startKey, startTime, new Dictionary<string, IReadOnlyList<RegionDef>> { [watcher.Id] = regions }, startImage?.Filename);
+        _recognizer.ResetReuse();
+        if (plan.Rollback)
+        {
+            lock (_lock) { Message = "분석 상태를 복원하는 중…"; IsError = false; }
+            Changed?.Invoke();
+            await Task.Run(() => _analyzer.RebuildBefore(plan.Character, plan.WatcherIds, plan.StartKey)).ConfigureAwait(false);
+            lock (_lock) { if (Message == "분석 상태를 복원하는 중…") Message = null; }
+        }
+        Store.ResumeCharacter(watcher.Character);
+        _scanNow = true;
+        Changed?.Invoke();
+    }
 
     // ---------- 감시 눈깔 관리 ----------
 

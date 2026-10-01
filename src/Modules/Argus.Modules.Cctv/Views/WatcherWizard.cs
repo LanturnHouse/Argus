@@ -214,6 +214,12 @@ internal sealed class WatcherWizard
         if (CurrentCharacter.Length == 0) { _error.Text = "캐릭터를 선택해주세요."; return; }
         if (string.IsNullOrWhiteSpace(_label.Text)) { _error.Text = "감지 이름을 입력해주세요."; return; }
         if (_editor.Regions.Count == 0) { _error.Text = "인식 영역을 하나 이상 지정해주세요."; return; }
+        if (_editing != null && (_type != _editing.WatchType || CurrentCharacter != _editing.Character || !CctvStore.SameRegions(_editor.Regions, _editing.Regions)))
+        {
+            var answer = MessageBox.Show("영역(또는 감시 타입 · 캐릭터)을 바꿔 저장하면 이 캐릭터의 분석 결과가 모두 지워지고 폴더의 스크린샷을 처음부터 다시 분석합니다.\n\n중간에 화면 위치만 바뀐 경우라면 취소하고, 눈깔 목록의 '일시중지 → 재시작'을 쓰세요. 앞의 분석 결과를 그대로 두고 새 영역으로 이어서 분석합니다.\n\n처음부터 다시 분석할까요?",
+                "처음부터 다시 분석", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes) return;
+        }
         var id = _editing?.Id ?? $"watcher-{DateTimeOffset.Now.ToUnixTimeMilliseconds()}";
         _svc.SaveWatcher(new Watcher(id, _label.Text.Trim(), CurrentCharacter, _type, true, 2, [.. _editor.Regions]));
         _window.Close();

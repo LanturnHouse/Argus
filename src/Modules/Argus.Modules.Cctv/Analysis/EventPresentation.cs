@@ -12,7 +12,8 @@ public static class EventPresentation
     {
         "warp_in" => "워프인", "warp_out" => "워프아웃", "docked" => "도킹", "undocked" => "언독", "jump_in" => "점프인", "jump_out" => "점프아웃",
         "appeared" => "오버뷰 인", "disappeared" => "오버뷰 아웃", "covop_in" => "코옵인", "covop_out" => "코옵아웃",
-        "signature_created" or "signature_destroyed" => "시그니처", _ => "기타",
+        "signature_created" or "signature_destroyed" => "시그니처",
+        "watch_paused" => "일시중지", "watch_resumed" => "재시작", "region_changed" => "영역 변경", _ => "기타",
     };
 
     public static EventCategory Category(string type) => type switch
@@ -34,7 +35,7 @@ public static class EventPresentation
     public static string Color(string type) => type switch
     {
         "warp_in" => "#6BA0FF", "warp_out" => "#F5C15A", "docked" => "#6FD6A0", "undocked" => "#5CC8C0", "jump_in" or "jump_out" => "#B79CFF",
-        "covop_in" or "covop_out" => "#9AA3B5", "signature_created" => "#6FD6A0", "signature_destroyed" => "#FF8A8F", "appeared" => "#8EC5FF", "disappeared" => "#C9A5A5", _ => "#8B93A5",
+        "covop_in" or "covop_out" => "#9AA3B5", "signature_created" => "#6FD6A0", "signature_destroyed" => "#FF8A8F", "watch_paused" => "#F5C15A", "watch_resumed" => "#6FD6A0", "region_changed" => "#8EC5FF", "appeared" => "#8EC5FF", "disappeared" => "#C9A5A5", _ => "#8B93A5",
     };
 
     /// <summary>"확정" / "추정" (워프·도킹·언독 판정만).</summary>
@@ -48,6 +49,7 @@ public static class EventPresentation
     /// <summary>한 줄 설명: 함선 · 도킹 수 변화 · 속도.</summary>
     public static string Detail(EventRow e)
     {
+        if (CctvStore.IsMarker(e.Type)) return MarkerDetail(e);
         if (e.Type is "signature_created" or "signature_destroyed")
             return $"{(e.Type == "signature_created" ? "생성" : "소멸")} · {(e.Details["name"]?.ToString() is { Length: > 0 } n ? n : "미확인 시그니처")}";
         var parts = new List<string>();
@@ -56,6 +58,18 @@ public static class EventPresentation
             parts.Add($"도킹 수 {bd:0} → {ad:0}");
         if (e.Speed is { } sp && !double.IsNaN(sp)) parts.Add($"{sp:N0} m/s");
         return parts.Count > 0 ? string.Join(" · ", parts) : "세부 정보 분석 중";
+    }
+
+    /// <summary>타임라인 표식(일시중지 · 재시작 · 영역 변경) 의 제목.</summary>
+    public static string MarkerTitle(EventRow e) => e.Type switch { "watch_paused" => "감시 일시중지", "watch_resumed" => "감시 재시작", _ => "인식 영역 변경" };
+
+    private static string MarkerDetail(EventRow e)
+    {
+        if (e.Type == "watch_paused") return "분석을 멈췄습니다. 자리를 잡은 뒤 재시작 지점을 고르세요.";
+        if (e.Type == "region_changed") return "이 지점부터 새 인식 영역으로 분석합니다.";
+        var image = e.Details["startImage"]?.ToString();
+        var from = string.IsNullOrEmpty(image) ? "지금 이후 촬영분부터" : $"{image} 부터";
+        return e.Details["rollback"]?.GetValue<bool>() == true ? $"{from} · 이미 분석한 구간부터 다시 시작 (그 앞의 결과는 유지)" : $"{from} 이어서 분석";
     }
 
     /// <summary>JSON 숫자를 double 로 (정수로 만든 값이든 읽어 온 값이든).</summary>

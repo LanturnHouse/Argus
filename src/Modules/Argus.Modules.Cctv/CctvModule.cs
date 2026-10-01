@@ -15,7 +15,6 @@ public sealed class CctvModule : IArgusModule, IDashboardContributor
 
     public string Id => "argus.cctv";
     public string DisplayName => "분석";
-    public string? SettingsParentId => "argus.capture";   // 설정 페이지에서도 CCTV 그룹 아래
     public string? NavParentId => "argus.capture";   // 사이드바에서 CCTV 아래 하위 항목으로 보여준다
     public string Icon => "";
 
@@ -34,7 +33,7 @@ public sealed class CctvModule : IArgusModule, IDashboardContributor
     }
 
     public object? CreateView() => _service is { } s ? _view ??= new CctvView(s) : null;
-    public object? CreateSettingsView() => _service is { } s ? new CctvSettingsView(s) : null;
+    // 비전 모델 · 폴더 · 분석 기록 초기화는 설정 탭이 아니라 분석 탭의 '분석 설정' 에서 바꾼다.
 
     // ---------- 대시보드 ----------
 

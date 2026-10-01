@@ -40,6 +40,7 @@ internal sealed class CctvView : UserControl
         root.Children.Add(UiKit.Text("분석", 24, FontWeights.Bold));
         root.Children.Add(UiKit.Dim("스크린샷의 오버뷰 · 프로빙 창 · 도킹 숫자를 비전 모델로 읽어 출입 · 도킹 · 시그니처 변화를 판정합니다.", 12, new Thickness(0, 4, 0, 16)));
         root.Children.Add(_analysisHost);
+        root.Children.Add(BuildAnalysisSettingsCard());
         root.Children.Add(_warningHost);
         root.Children.Add(_statsHost);
         root.Children.Add(_watchersHost);
@@ -185,6 +186,34 @@ internal sealed class CctvView : UserControl
         return row;
     }
 
+    // ---------- 분석 설정 (비전 모델 · 폴더 · 기록 초기화) ----------
+
+    private CctvSettingsView? _settingsView;
+    private bool _settingsOpen;
+
+    private UIElement BuildAnalysisSettingsCard()
+    {
+        var body = new Border { Margin = new Thickness(0, 10, 0, 0), Visibility = Visibility.Collapsed };
+        var arrow = UiKit.Text("▾", 13, FontWeights.SemiBold, UiKit.DimBrush);
+        var title = new StackPanel { Orientation = Orientation.Horizontal };
+        title.Children.Add(UiKit.Text("분석 설정", 13.5, FontWeights.SemiBold));
+        title.Children.Add(UiKit.Dim("비전 모델 · 스크린샷 폴더 · 분석 기록 초기화", 12, new Thickness(12, 0, 0, 0), false));
+        var head = new DockPanel();
+        DockPanel.SetDock(arrow, Dock.Right);
+        head.Children.Add(arrow); head.Children.Add(title);
+        var toggle = new RowButton(head);
+        toggle.Clicked += () =>
+        {
+            _settingsOpen = !_settingsOpen;
+            if (_settingsOpen && _settingsView == null) { _settingsView = new CctvSettingsView(_svc); body.Child = _settingsView; }
+            body.Visibility = _settingsOpen ? Visibility.Visible : Visibility.Collapsed;
+            arrow.Text = _settingsOpen ? "▴" : "▾";
+        };
+        var box = new StackPanel();
+        box.Children.Add(toggle); box.Children.Add(body);
+        return UiKit.Card(box, new Thickness(8, 6, 8, 8), new Thickness(0, 0, 0, 14));
+    }
+
     // ---------- 요약 ----------
 
     private UIElement BuildStats(ViewData d)
@@ -236,18 +265,25 @@ internal sealed class CctvView : UserControl
         {
             var row = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
             var remove = UiKit.Button("제거", () => RemoveWatcher(w), "GhostButton"); remove.Margin = new Thickness(6, 0, 0, 0); remove.Padding = new Thickness(10, 4, 10, 4);
-            var edit = UiKit.Button("영역 수정", () => EditWatcher(w.Id)); edit.Margin = new Thickness(0); edit.Padding = new Thickness(10, 4, 10, 4);
+            var edit = UiKit.Button("영역 수정", () => EditWatcher(w.Id)); edit.Margin = new Thickness(6, 0, 0, 0); edit.Padding = new Thickness(10, 4, 10, 4);
+            edit.ToolTip = "저장하면 이 캐릭터의 분석 결과를 모두 지우고 처음부터 다시 분석합니다. 중간에 위치만 바뀐 경우에는 일시중지 → 재시작을 쓰세요.";
+            var pause = w.Paused
+                ? UiKit.Button("재시작…", () => ResumeWindow.ShowFor(Window.GetWindow(this), _svc, w), "PrimaryButton")
+                : UiKit.Button("일시중지", () => _svc.PauseWatching(w.Character));
+            pause.Margin = new Thickness(0); pause.Padding = new Thickness(10, 4, 10, 4);
+            pause.ToolTip = w.Paused ? "자리를 잡은 뒤 어느 스크린샷부터 다시 분석할지 고르고 인식 영역을 확인합니다." : "눈깔(화면)을 옮기는 동안 분석을 멈춥니다. 앞의 분석 결과는 그대로 둡니다.";
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            buttons.Children.Add(edit); buttons.Children.Add(remove);
+            buttons.Children.Add(pause); buttons.Children.Add(edit); buttons.Children.Add(remove);
             DockPanel.SetDock(buttons, Dock.Right);
             row.Children.Add(buttons);
 
-            var live = w.Enabled && w.RegionVersion >= 2;
+            var live = w.Enabled && w.RegionVersion >= 2 && !w.Paused;
             var info = new StackPanel();
             var line1 = new StackPanel { Orientation = Orientation.Horizontal };
             line1.Children.Add(new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Fill = live ? UiKit.Good : UiKit.Warn, Margin = new Thickness(0, 1, 8, 0), VerticalAlignment = VerticalAlignment.Center });
             line1.Children.Add(UiKit.Text(w.Label, 14, FontWeights.SemiBold));
             line1.Children.Add(UiKit.Chip(w.WatchType.Label(), UiKit.NeutralBg, UiKit.NeutralText, null, new Thickness(10, 0, 0, 0)));
+            if (w.Paused) line1.Children.Add(UiKit.Chip($"일시중지 · {(w.PausedAt is { Length: >= 19 } pa ? pa.Substring(11, 8) : "")}부터", UiKit.WarnBg, UiKit.Warn, null, new Thickness(8, 0, 0, 0)));
             info.Children.Add(line1);
             info.Children.Add(UiKit.Dim($"{w.Character} · 인식 영역 {w.Regions.Count}개 ({string.Join(" · ", w.Regions.GroupBy(r => r.Kind).Select(g => $"{g.Key.Label()} {g.Count()}"))})" + (live ? "" : " · 영역 재설정 필요"), 12, new Thickness(16, 2, 0, 0)));
             row.Children.Add(info);
@@ -395,7 +431,8 @@ internal sealed class CctvView : UserControl
 
         var main = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var nameLine = new StackPanel { Orientation = Orientation.Horizontal };
-        nameLine.Children.Add(UiKit.Text(e.Type.StartsWith("signature_") ? (e.Character ?? "---") : (e.Character ?? "미확인 대상"), 13.5, FontWeights.SemiBold));
+        var marker = CctvStore.IsMarker(e.Type);
+        nameLine.Children.Add(UiKit.Text(marker ? EventPresentation.MarkerTitle(e) : e.Type.StartsWith("signature_") ? (e.Character ?? "---") : (e.Character ?? "미확인 대상"), 13.5, FontWeights.SemiBold));
         if (EventPresentation.Verification(e) is { } v) nameLine.Children.Add(UiKit.Chip(v, v == "확정" ? UiKit.GoodBg : UiKit.WarnBg, v == "확정" ? UiKit.Good : UiKit.Warn, null, new Thickness(8, 0, 0, 0)));
         main.Children.Add(nameLine);
         main.Children.Add(UiKit.Dim(EventPresentation.Detail(e), 12, new Thickness(0, 1, 0, 0), false));
@@ -403,9 +440,10 @@ internal sealed class CctvView : UserControl
 
         var corp = UiKit.Text(e.Corporation is { Length: > 0 } c && d.Canonical(c) is var t && t != "미확인" ? $"[{t}]" : "—", 12.5, FontWeights.SemiBold, UiKit.AccentText); Grid.SetColumn(corp, 3); g.Children.Add(corp);
         var src = UiKit.Dim(e.WatcherLabel ?? "미지정 눈깔", 12, null, false); src.TextTrimming = TextTrimming.CharacterEllipsis; Grid.SetColumn(src, 4); g.Children.Add(src);
-        var conf = UiKit.Dim($"인식 {Math.Round((e.Confidence ?? 0) * 100)}%", 11.5, null, false); Grid.SetColumn(conf, 5); g.Children.Add(conf);
+        var conf = UiKit.Dim(marker ? "" : $"인식 {Math.Round((e.Confidence ?? 0) * 100)}%", 11.5, null, false); Grid.SetColumn(conf, 5); g.Children.Add(conf);
 
         var row = new RowButton(g);
+        if (marker) { row.Cursor = Cursors.Arrow; return row; }   // 표식은 판정 근거가 없다
         row.Clicked += () => EvidenceWindow.ShowFor(Window.GetWindow(this), _svc, e, d.Canonical);
         return row;
     }

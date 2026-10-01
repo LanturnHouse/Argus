@@ -71,22 +71,49 @@ public sealed class CctvStore : IDisposable
             CREATE INDEX IF NOT EXISTS idx_regions_watcher ON regions(watcher_id, sort_order);
             CREATE INDEX IF NOT EXISTS idx_observations_dock_watcher ON observations(watcher_id, image_id) WHERE region_kind = 'dock';
             """);
+        EnsureColumns();
     }
 
     public void Dispose() => Db.Dispose();
+
+    /// <summary>
+    /// 영역 세트 · 일시중지 열을 붙인다 (기존 DB 는 그대로 열린다).
+    /// regions.valid_from: 이 영역 세트가 적용되기 시작하는 촬영 키('' = 처음부터), regions.baseline: 이 세트의 첫 프레임을 '새 출발점'으로 본다(1).
+    /// watchers.paused / paused_at: 캐릭터 단위 감시 일시중지.
+    /// </summary>
+    private void EnsureColumns()
+    {
+        void Ensure(string table, string column, string ddl)
+        {
+            if (Db.Query($"PRAGMA table_info({table})").Any(r => string.Equals(r.Str("name"), column, StringComparison.OrdinalIgnoreCase))) return;
+            Db.Exec($"ALTER TABLE {table} ADD COLUMN {column} {ddl}");
+        }
+        Ensure("regions", "valid_from", "TEXT NOT NULL DEFAULT ''");
+        Ensure("regions", "baseline", "INTEGER NOT NULL DEFAULT 0");
+        Ensure("watchers", "paused", "INTEGER NOT NULL DEFAULT 0");
+        Ensure("watchers", "paused_at", "TEXT");
+    }
 
     // ---------- 감시 눈깔 ----------
 
     public List<Watcher> ListWatchers()
     {
-        var watchers = Db.Query("SELECT id, label, character_name, watch_type, enabled, region_version FROM watchers ORDER BY created_at, rowid");
+        var watchers = Db.Query("SELECT id, label, character_name, watch_type, enabled, region_version, paused, paused_at FROM watchers ORDER BY created_at, rowid");
         return [.. watchers.Select(w =>
         {
-            var regions = Db.Query("SELECT kind, x, y, width, height FROM regions WHERE watcher_id = ? ORDER BY sort_order", w.Str("id"))
-                .Select(r => new RegionDef(Names.ToRegionKind(r.Str("kind")!), r.Dbl("x") ?? 0, r.Dbl("y") ?? 0, r.Dbl("width") ?? 0, r.Dbl("height") ?? 0)).ToList();
-            return new Watcher(w.Str("id")!, w.Str("label")!, w.Str("character_name")!, Names.ToWatchType(w.Str("watch_type")!), w.Bool("enabled"), (int)w.Long("region_version"), regions);
+            var regions = LatestRegions(w.Str("id")!);
+            return new Watcher(w.Str("id")!, w.Str("label")!, w.Str("character_name")!, Names.ToWatchType(w.Str("watch_type")!), w.Bool("enabled"), (int)w.Long("region_version"), regions,
+                w.Bool("paused"), w.Str("paused_at"));
         })];
     }
+
+    /// <summary>눈깔의 가장 최근 영역 세트 (수정 창에 불러오는 것 · 지금 적용 중인 영역).</summary>
+    public List<RegionDef> LatestRegions(string watcherId) =>
+        [.. Db.Query("""
+            SELECT kind, x, y, width, height FROM regions
+            WHERE watcher_id = ? AND valid_from = (SELECT MAX(valid_from) FROM regions WHERE watcher_id = ?) ORDER BY sort_order
+            """, watcherId, watcherId)
+            .Select(r => new RegionDef(Names.ToRegionKind(r.Str("kind")!), r.Dbl("x") ?? 0, r.Dbl("y") ?? 0, r.Dbl("width") ?? 0, r.Dbl("height") ?? 0))];
 
     /// <summary>
     /// 감시 눈깔을 저장한다. 이미 있으면 갱신. 같은 캐릭터의 분석 결과는 모두 지우고 그 캐릭터의 이미지를 처음부터 다시 분석하게 한다
@@ -104,7 +131,7 @@ public sealed class CctvStore : IDisposable
                 INSERT INTO watchers (id, label, character_name, watch_type, enabled, region_version, updated_at)
                 VALUES (?, ?, ?, ?, ?, 2, CURRENT_TIMESTAMP)
                 ON CONFLICT(id) DO UPDATE SET label = excluded.label, character_name = excluded.character_name, watch_type = excluded.watch_type,
-                  enabled = excluded.enabled, region_version = 2, updated_at = CURRENT_TIMESTAMP
+                  enabled = excluded.enabled, region_version = 2, paused = 0, paused_at = NULL, updated_at = CURRENT_TIMESTAMP
                 """, watcher.Id, watcher.Label, watcher.Character, watcher.WatchType.Db(), watcher.Enabled ? 1 : 0);
             Db.Exec("DELETE FROM regions WHERE watcher_id = ?", watcher.Id);
             for (int i = 0; i < watcher.Regions.Count; i++)
@@ -198,7 +225,7 @@ public sealed class CctvStore : IDisposable
         var r = Db.One("""
             SELECT i.id, i.file_path, i.filename, i.character_name, i.capture_key, i.captured_at FROM images i
             WHERE i.processing_status = 'pending'
-              AND EXISTS (SELECT 1 FROM watchers w WHERE w.character_name = i.character_name AND w.enabled = 1 AND w.region_version >= 2)
+              AND EXISTS (SELECT 1 FROM watchers w WHERE w.character_name = i.character_name AND w.enabled = 1 AND w.paused = 0 AND w.region_version >= 2)
             ORDER BY i.capture_key LIMIT 1
             """);
         return r == null ? null : new ImageRow(r.Long("id"), r.Str("file_path")!, r.Str("filename")!, r.Str("character_name")!, r.Str("capture_key")!, r.Str("captured_at")!);
@@ -207,16 +234,27 @@ public sealed class CctvStore : IDisposable
     public void MarkProcessing(long imageId) => Db.Exec("UPDATE images SET processing_status = 'processing' WHERE id = ?", imageId);
     public string? ImageStatus(long imageId) => Db.One("SELECT processing_status FROM images WHERE id = ?", imageId)?.Str("processing_status");
 
-    internal List<WatcherRegion> WatcherRegions(string character) =>
+    /// <summary>
+    /// 이 캐릭터의 활성(일시중지 아님) 눈깔들의 영역. captureKey 를 주면 그 촬영 시각에 유효했던 영역 세트를 쓴다(영역을 중간에 바꿔도 예전 이미지는 옛 영역으로 읽는다).
+    /// </summary>
+    internal List<WatcherRegion> WatcherRegions(string character, string? captureKey = null) =>
         [.. Db.Query("""
             SELECT w.id, w.label, w.watch_type, r.kind, r.x, r.y, r.width, r.height, r.sort_order FROM watchers w
             JOIN regions r ON r.watcher_id = w.id
-            WHERE w.character_name = ? AND w.enabled = 1 AND w.region_version >= 2
+            WHERE w.character_name = ? AND w.enabled = 1 AND w.paused = 0 AND w.region_version >= 2
+              AND r.valid_from = (SELECT MAX(r2.valid_from) FROM regions r2 WHERE r2.watcher_id = w.id AND r2.valid_from <= ?)
             ORDER BY w.created_at, w.rowid, r.sort_order
-            """, character).Select(r => new WatcherRegion(r.Str("id")!, r.Str("label")!, Names.ToWatchType(r.Str("watch_type")!), Names.ToRegionKind(r.Str("kind")!),
+            """, character, captureKey ?? "\uffff").Select(r => new WatcherRegion(r.Str("id")!, r.Str("label")!, Names.ToWatchType(r.Str("watch_type")!), Names.ToRegionKind(r.Str("kind")!),
                 r.Dbl("x") ?? 0, r.Dbl("y") ?? 0, r.Dbl("width") ?? 0, r.Dbl("height") ?? 0, (int)r.Long("sort_order")))];
 
-    public bool WatcherEnabled(string watcherId) => Db.One("SELECT 1 AS ok FROM watchers WHERE id = ? AND enabled = 1", watcherId) != null;
+    /// <summary>이 눈깔의 그 촬영 시각에 유효한 영역 세트가 언제부터인지(valid_from)와 그 첫 프레임을 새 출발점으로 볼지(baseline).</summary>
+    internal (string ValidFrom, bool Baseline) RegionEpoch(string watcherId, string captureKey)
+    {
+        var r = Db.One("SELECT valid_from, baseline FROM regions WHERE watcher_id = ? AND valid_from <= ? ORDER BY valid_from DESC LIMIT 1", watcherId, captureKey);
+        return r == null ? ("", false) : (r.Str("valid_from") ?? "", r.Bool("baseline"));
+    }
+
+    public bool WatcherEnabled(string watcherId) => Db.One("SELECT 1 AS ok FROM watchers WHERE id = ? AND enabled = 1 AND paused = 0", watcherId) != null;
 
     /// <summary>한 이미지의 관측을 저장하고 '처리 완료'로 표시한다 (이전 관측은 지운다).</summary>
     internal void CompleteImage(long imageId, IEnumerable<Observation> observations)
@@ -233,6 +271,106 @@ public sealed class CctvStore : IDisposable
 
     public void FailImage(long imageId) => Db.Exec("UPDATE images SET processing_status = 'failed' WHERE id = ?", imageId);
 
+    // ---------- 감시 일시중지 · 재시작 ----------
+
+    /// <summary>촬영 시각 문자열(ISO)을 이미지의 촬영 키(숫자만)로: "2026-10-02T00:12:21.550" → "20261002001221550".</summary>
+    internal static string KeyOf(string iso) => new([.. iso.Where(char.IsDigit)]);
+
+    /// <summary>시각 표식 이벤트(일시중지 · 재시작 · 영역 변경)를 타임라인에 남긴다. 분석으로 만든 이벤트가 아니므로 되감기에서도 지우지 않는다.</summary>
+    internal void InsertMarker(string watcherId, string time, string type, JsonObject? details = null) =>
+        Db.Exec("INSERT OR IGNORE INTO events (event_time, event_type, watcher_id, details_json) VALUES (?, ?, ?, ?)", time, type, watcherId, CctvJson.Compact(details ?? new JsonObject()));
+
+    internal static bool IsMarker(string type) => type is "watch_paused" or "watch_resumed" or "region_changed";
+
+    /// <summary>이 캐릭터의 감시를 일시중지한다 (그 캐릭터의 모든 눈깔). 이미 중지 중이면 아무것도 하지 않는다. 시각은 지금.</summary>
+    public bool PauseCharacter(string character, DateTime now)
+    {
+        var at = now.ToString("yyyy-MM-ddTHH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
+        var changed = false;
+        Db.Transaction(() =>
+        {
+            foreach (var w in Db.Query("SELECT id FROM watchers WHERE character_name = ? AND paused = 0", character))
+            {
+                Db.Exec("UPDATE watchers SET paused = 1, paused_at = ? WHERE id = ?", at, w.Str("id"));
+                InsertMarker(w.Str("id")!, at, "watch_paused");
+                changed = true;
+            }
+        });
+        return changed;
+    }
+
+    public sealed record RestartImage(ImageRow Image, string Status);
+
+    /// <summary>
+    /// 재시작 지점을 고르는 목록: 일시중지 시각 이전 <paramref name="before"/> 장과 그 이후의 모든 이미지(최대 <paramref name="afterLimit"/> 장), 오래된 것부터.
+    /// </summary>
+    internal (List<RestartImage> Before, List<RestartImage> After) ImagesAround(string character, string pausedKey, int before = 25, int afterLimit = 200)
+    {
+        RestartImage Map(Row r) => new(new ImageRow(r.Long("id"), r.Str("file_path")!, r.Str("filename")!, r.Str("character_name")!, r.Str("capture_key")!, r.Str("captured_at")!), r.Str("processing_status") ?? "");
+        var b = Db.Query("SELECT id, file_path, filename, character_name, capture_key, captured_at, processing_status FROM images WHERE character_name = ? AND capture_key <= ? ORDER BY capture_key DESC LIMIT ?", character, pausedKey, before).Select(Map).Reverse().ToList();
+        var a = Db.Query("SELECT id, file_path, filename, character_name, capture_key, captured_at, processing_status FROM images WHERE character_name = ? AND capture_key > ? ORDER BY capture_key DESC LIMIT ?", character, pausedKey, afterLimit).Select(Map).Reverse().ToList();
+        return (b, a);
+    }
+
+    public sealed record RestartPlan(string Character, string StartKey, List<string> WatcherIds, bool Rollback);
+
+    /// <summary>
+    /// 감시를 startKey 부터 다시 시작할 준비를 한다. 일시중지는 호출한 쪽이 상태 복원을 마친 뒤 <see cref="ResumeCharacter"/> 로 푼다. (그 캐릭터의 모든 눈깔).
+    /// - 새 영역 세트(valid_from = startKey, 첫 프레임은 새 출발점)를 만든다: newRegions 에 있는 눈깔은 새 영역, 나머지는 지금 영역 그대로.
+    /// - startKey 이전의 대기 이미지는 '건너뜀', startKey 이후 이미지는 다시 대기(이미 분석했다면 그 관측을 지우고 다시 읽는다).
+    /// - startKey 이후까지 분석한 결과가 있었으면 되감기가 필요하다: 그 눈깔들의 분석 이벤트(표식 제외)와 현재 상태를 지운다. 돌려준 계획으로 호출한 쪽이 startKey 이전 이미지를 다시 분석기에 넣어 상태를 복원한다.
+    /// - '재시작' 표식(과 영역이 바뀐 눈깔에는 '영역 변경' 표식)을 남긴다.
+    /// </summary>
+    internal RestartPlan ApplyRestartPoint(string character, string startKey, string startTime, IReadOnlyDictionary<string, IReadOnlyList<RegionDef>> newRegions, string? startImageName)
+    {
+        RestartPlan? plan = null;
+        Db.Transaction(() =>
+        {
+            var watcherIds = Db.Query("SELECT id FROM watchers WHERE character_name = ? ORDER BY created_at, rowid", character).Select(r => r.Str("id")!).ToList();
+            var rollback = Db.One("SELECT 1 AS ok FROM images WHERE character_name = ? AND capture_key >= ? AND processing_status = 'processed'", character, startKey) != null;
+
+            foreach (var id in watcherIds)
+            {
+                var changed = newRegions.TryGetValue(id, out var fresh) && !SameRegions(fresh, LatestRegions(id));
+                var set = newRegions.TryGetValue(id, out var given) ? new List<RegionDef>(given) : LatestRegions(id);
+                // 이 시점 이후의 영역 세트는 되감기와 함께 사라진다. 같은 시점의 세트는 새로 덮는다.
+                Db.Exec("DELETE FROM regions WHERE watcher_id = ? AND valid_from >= ?", id, startKey);
+                for (int i = 0; i < set.Count; i++)
+                    Db.Exec("INSERT INTO regions (watcher_id, kind, x, y, width, height, sort_order, valid_from, baseline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                        id, set[i].Kind.Db(), set[i].X, set[i].Y, set[i].W, set[i].H, i, startKey);
+                if (rollback)
+                    foreach (var table in new[] { "current_objects", "current_signatures", "dock_credits" }) Db.Exec($"DELETE FROM {table} WHERE watcher_id = ?", id);
+
+                // 되감기: 분석이 만든 이벤트는 모두 지운다 (호출한 쪽이 startKey 이전 이미지를 다시 분석해 그 앞의 이벤트를 똑같이 다시 만든다).
+                // 표식은 startKey 이전 것만 남긴다. 되감기가 아니면 이미 지나간 이 시점 이후의 재시작·영역 변경 표식만 정리한다.
+                if (rollback) Db.Exec("DELETE FROM events WHERE watcher_id = ? AND (event_time >= ? OR event_type NOT IN ('watch_paused', 'watch_resumed', 'region_changed'))", id, startTime);
+                else Db.Exec("DELETE FROM events WHERE watcher_id = ? AND event_type IN ('watch_resumed', 'region_changed') AND event_time >= ?", id, startTime);
+
+                InsertMarker(id, startTime, "watch_resumed", new JsonObject { ["startKey"] = startKey, ["startImage"] = startImageName, ["rollback"] = rollback, ["regionsChanged"] = changed });
+                if (changed) InsertMarker(id, startTime, "region_changed", new JsonObject { ["startKey"] = startKey, ["regions"] = set.Count });
+            }
+
+            // 일시중지 중에 쌓인 이미지: 시작 이전은 건너뛰고, 시작 이후는 다시 읽게 한다.
+            Db.Exec("UPDATE images SET processing_status = 'skipped' WHERE character_name = ? AND capture_key < ? AND processing_status IN ('pending', 'processing')", character, startKey);
+            Db.Exec("DELETE FROM observations WHERE watcher_id IN (SELECT id FROM watchers WHERE character_name = ?) AND image_id IN (SELECT id FROM images WHERE character_name = ? AND capture_key >= ?)", character, character, startKey);
+            Db.Exec("UPDATE images SET processing_status = 'pending' WHERE character_name = ? AND capture_key >= ?", character, startKey);
+            plan = new RestartPlan(character, startKey, watcherIds, rollback);
+        });
+        return plan!;
+    }
+
+    /// <summary>일시중지를 푼다 (되감기 복원이 끝난 뒤 호출 — 그 전에는 분석이 이 캐릭터의 이미지를 집어 가지 않는다).</summary>
+    internal void ResumeCharacter(string character) => Db.Exec("UPDATE watchers SET paused = 0, paused_at = NULL WHERE character_name = ?", character);
+
+    internal bool IsPaused(string character) => Db.One("SELECT 1 AS ok FROM watchers WHERE character_name = ? AND paused = 1", character) != null;
+
+    internal static bool SameRegions(IReadOnlyList<RegionDef> a, IReadOnlyList<RegionDef> b)
+    {
+        if (a.Count != b.Count) return false;
+        static bool Near(double x, double y) => Math.Abs(x - y) < 0.05;
+        return a.Zip(b).All(p => p.First.Kind == p.Second.Kind && Near(p.First.X, p.Second.X) && Near(p.First.Y, p.Second.Y) && Near(p.First.W, p.Second.W) && Near(p.First.H, p.Second.H));
+    }
+
     // ---------- 화면용 조회 ----------
 
     public ProcessingCounts Counts()
@@ -240,6 +378,7 @@ public sealed class CctvStore : IDisposable
         var rows = Db.Query("""
             SELECT processing_status AS status, COUNT(*) AS count FROM images i
             WHERE EXISTS (SELECT 1 FROM watchers w WHERE w.character_name = i.character_name AND w.enabled = 1 AND w.region_version >= 2)
+              AND (processing_status != 'pending' OR EXISTS (SELECT 1 FROM watchers w WHERE w.character_name = i.character_name AND w.enabled = 1 AND w.paused = 0 AND w.region_version >= 2))
             GROUP BY processing_status
             """).ToDictionary(r => r.Str("status")!, r => (int)r.Long("count"));
         return new ProcessingCounts(rows.GetValueOrDefault("pending"), rows.GetValueOrDefault("processing"), rows.GetValueOrDefault("processed"), rows.GetValueOrDefault("failed"));

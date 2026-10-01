@@ -26,7 +26,8 @@ public static class Names
 public sealed record RegionDef(RegionKind Kind, double X, double Y, double W, double H);
 
 /// <summary>감시 눈깔 하나: 캐릭터 + 감시 타입 + 인식 영역들.</summary>
-public sealed record Watcher(string Id, string Label, string Character, WatchType WatchType, bool Enabled, int RegionVersion, IReadOnlyList<RegionDef> Regions);
+public sealed record Watcher(string Id, string Label, string Character, WatchType WatchType, bool Enabled, int RegionVersion, IReadOnlyList<RegionDef> Regions,
+    bool Paused = false, string? PausedAt = null);
 
 /// <summary>스크린샷 파일 하나 (파일명 CCTV{yyyyMMddHHmmss}{fff}_{캐릭터}.png 에서 읽은 정보).</summary>
 public sealed record ImageRow(long Id, string FilePath, string Filename, string Character, string CaptureKey, string CapturedAt);

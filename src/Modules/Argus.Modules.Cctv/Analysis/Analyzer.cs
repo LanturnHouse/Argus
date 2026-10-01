@@ -89,7 +89,7 @@ public sealed class Analyzer(CctvStore store)
     /// 이번 프레임의 도킹 숫자가 '마지막으로 제대로 읽은 값'에서 바뀌었으면 그 변화를 돌려준다. 직전 프레임에서 숫자를 못 읽었어도(흐림, 오독) 그 앞의 값과 비교한다.
     /// 숫자가 둘 이상의 도킹 영역에서 동시에 바뀌면 어느 오버뷰 행과 이어지는지 알 수 없으므로 null.
     /// </summary>
-    private DockChange? DockCounterChange(string watcherId, string captureKey, List<Observation> current)
+    private DockChange? DockCounterChange(string watcherId, string captureKey, List<Observation> current, string epochKey)
     {
         var cur = DockReadings(current);
         if (cur == null) return null;
@@ -99,11 +99,11 @@ public sealed class Analyzer(CctvStore store)
             var prev = Db.One("""
                 SELECT json_extract(o.payload_json, '$.fields.dockCount') AS cnt, i.id AS imageId
                 FROM observations o JOIN images i ON i.id = o.image_id
-                WHERE o.watcher_id = ? AND o.region_kind = 'dock' AND i.capture_key < ?
+                WHERE o.watcher_id = ? AND o.region_kind = 'dock' AND i.capture_key < ? AND (? = '' OR i.capture_key >= ?)
                   AND json_extract(o.payload_json, '$.regionIndex') = ?
                   AND json_type(o.payload_json, '$.fields.dockCount') = 'integer' AND json_extract(o.payload_json, '$.fields.dockCount') >= 0
                 ORDER BY i.capture_key DESC LIMIT 1
-                """, watcherId, captureKey, regionIndex);
+                """, watcherId, captureKey, epochKey, epochKey, regionIndex);
             if (prev == null) continue;   // 이 영역은 처음 읽었다: 비교할 값이 없다
             var before = (int)prev.Long("cnt");
             if (count != before) changes.Add(new DockChange(regionIndex, before, count, count - before, prev.Long("imageId")));
@@ -115,13 +115,14 @@ public sealed class Analyzer(CctvStore store)
 
     private sealed record Previous(long? ImageId, List<Observation> Observations);
 
-    private Previous PreviousObservations(string watcherId, string captureKey)
+    /// <summary>이전 프레임. epochKey(영역 세트가 시작된 촬영 키, '' 이면 제한 없음) 이전의 프레임은 찾지 않는다 — 영역을 바꾸거나 감시를 멈췄다 다시 시작한 앞뒤는 이어 붙이지 않는다.</summary>
+    private Previous PreviousObservations(string watcherId, string captureKey, string epochKey)
     {
         var prevImage = Db.One("""
             SELECT i.id FROM images i JOIN observations o ON o.image_id = i.id
-            WHERE o.watcher_id = ? AND i.capture_key < ? AND i.processing_status = 'processed'
+            WHERE o.watcher_id = ? AND i.capture_key < ? AND i.processing_status = 'processed' AND (? = '' OR i.capture_key >= ?)
             GROUP BY i.id, i.capture_key ORDER BY i.capture_key DESC LIMIT 1
-            """, watcherId, captureKey);
+            """, watcherId, captureKey, epochKey, epochKey);
         if (prevImage == null) return new Previous(null, []);
         var observations = Db.Query("SELECT region_kind, payload_json, confidence FROM observations WHERE image_id = ? AND watcher_id = ? ORDER BY id", prevImage.Long("id"), watcherId)
             .Select(r => new Observation { WatcherId = watcherId, Kind = Names.ToRegionKind(r.Str("region_kind")!), Payload = CctvJson.Deserialize<RegionPayload>(r.Str("payload_json")) ?? new RegionPayload(), Confidence = r.Dbl("confidence") }).ToList();
@@ -225,12 +226,12 @@ public sealed class Analyzer(CctvStore store)
         public long Id; public string Kind = ""; public int Amount; public string At = ""; public JsonObject Details = new();
     }
 
-    private void ReconcileDockTransitions(string watcherId, ImageRow image, List<Observation> current)
+    private void ReconcileDockTransitions(string watcherId, ImageRow image, List<Observation> current, string epochKey)
     {
         var capturedAt = ParseTime(image.CapturedAt);
 
         // 1) 이번 프레임에서 도킹 숫자가 바뀌었으면 몫으로 적어 둔다 (줄었으면 언독 몫, 늘었으면 도킹 몫).
-        if (DockCounterChange(watcherId, image.CaptureKey, current) is { } change)
+        if (DockCounterChange(watcherId, image.CaptureKey, current, epochKey) is { } change)
         {
             var details = Obj(("dockCountBefore", change.Before), ("dockCountAfter", change.After), ("dockRegionIndex", change.RegionIndex), ("imageId", image.Id), ("beforeImageId", change.BeforeImageId));
             Db.Exec("INSERT INTO dock_credits (watcher_id, kind, amount, at, details_json) VALUES (?, ?, ?, ?, ?)",
@@ -385,7 +386,7 @@ public sealed class Analyzer(CctvStore store)
         public double? Speed, PreviousSpeed, Confidence, LastBrightness; public long LastImageId; public bool EntryConfirmed; public long? EntryPreviousImageId, EntryEventId;
     }
 
-    private void ReconcileCurrentObjects(string watcherId, WatchType watchType, ImageRow image, List<Observation> currentObservations, Previous previous, List<OverviewRow> rows)
+    private void ReconcileCurrentObjects(string watcherId, WatchType watchType, ImageRow image, List<Observation> currentObservations, Previous previous, List<OverviewRow> rows, bool baseline, string epochKey)
     {
         var existingRows = Db.Query("""
             SELECT identity_key, character_name, ship_name, corporation_ticker, distance_text, speed_mps, previous_speed_mps, confidence, entry_type, first_seen_at,
@@ -490,6 +491,13 @@ public sealed class Analyzer(CctvStore store)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
                 """;
 
+            if (baseline)
+            {
+                // 새 출발점(영역을 바꾸거나 감시를 멈췄다 다시 시작한 첫 프레임): 이미 있던 대상으로 기록만 하고 입장 이벤트는 만들지 않는다.
+                Db.Exec(InsertSql, watcherId, identity, row.Name, NullIfEmpty(row.Ship), NullIfEmpty(row.Corporation), NullIfEmpty(row.Distance), row.Speed, row.Confidence, image.Id, image.CapturedAt, null, image.CapturedAt, brightness, 1, null, null);
+                continue;
+            }
+
             if (IsCovertOpsShip(row.Ship))
             {
                 // 코버트 선체는 클로킹한 채 워프할 수 있어 워프/점프 구분과 속도 추세가 의미 없다: 다음 프레임을 기다리지 않고 바로 기록한다.
@@ -566,12 +574,12 @@ public sealed class Analyzer(CctvStore store)
         }
 
     Docking:
-        if (watchType == WatchType.Structure) ReconcileDockTransitions(watcherId, image, currentObservations);
+        if (watchType == WatchType.Structure) ReconcileDockTransitions(watcherId, image, currentObservations, epochKey);
     }
 
     // ---------- 현재 시그니처 (프로빙) ----------
 
-    private void ReconcileCurrentSignatures(string watcherId, ImageRow image, List<SignatureRow> signatures, long? previousImageId)
+    private void ReconcileCurrentSignatures(string watcherId, ImageRow image, List<SignatureRow> signatures, long? previousImageId, bool baseline)
     {
         var existing = Db.Query("SELECT signature_id, name, group_name, distance_text, confidence, first_seen_at, missing_count, image_id FROM current_signatures WHERE watcher_id = ?", watcherId)
             .ToDictionary(r => r.Str("signature_id")!, r => r);
@@ -584,8 +592,9 @@ public sealed class Analyzer(CctvStore store)
             {
                 Db.Exec("INSERT INTO current_signatures (watcher_id, signature_id, name, group_name, distance_text, confidence, image_id, first_seen_at, last_seen_at, missing_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
                     watcherId, id, NullIfEmpty(sig.Name), NullIfEmpty(sig.Group), NullIfEmpty(sig.Distance), sig.Confidence, image.Id, image.CapturedAt, image.CapturedAt);
-                InsertEvent(new EventDraft { Time = image.CapturedAt, Type = "signature_created", Character = id, WatcherId = watcherId, Confidence = sig.Confidence, ImageId = image.Id, PreviousImageId = previousImageId,
-                    Details = Obj(("name", sig.Name), ("group", sig.Group), ("distance", sig.Distance)) });
+                if (!baseline)
+                    InsertEvent(new EventDraft { Time = image.CapturedAt, Type = "signature_created", Character = id, WatcherId = watcherId, Confidence = sig.Confidence, ImageId = image.Id, PreviousImageId = previousImageId,
+                        Details = Obj(("name", sig.Name), ("group", sig.Group), ("distance", sig.Distance)) });
             }
             else
             {
@@ -609,6 +618,28 @@ public sealed class Analyzer(CctvStore store)
         }
     }
 
+    private void ClearWatcherState(string watcherId)
+    {
+        foreach (var table in new[] { "current_objects", "current_signatures", "dock_credits" }) Db.Exec($"DELETE FROM {table} WHERE watcher_id = ?", watcherId);
+    }
+
+    /// <summary>
+    /// 되감기 뒤 상태 복원: 이 눈깔들이 startKey 이전에 분석해 둔 관측을 촬영 순서대로 다시 분석기에 넣어 이벤트와 현재 상태를 그 시점까지 되살린다.
+    /// 비전 모델은 부르지 않는다 (저장된 관측만 쓴다). 호출 전에 그 눈깔들의 분석 이벤트와 상태가 지워져 있어야 한다.
+    /// </summary>
+    internal void RebuildBefore(string character, IReadOnlyCollection<string> watcherIds, string startKey)
+    {
+        var ids = Db.Query("SELECT id, file_path, filename, character_name, capture_key, captured_at FROM images WHERE character_name = ? AND capture_key < ? AND processing_status = 'processed' ORDER BY capture_key", character, startKey);
+        foreach (var r in ids)
+        {
+            var observations = Db.Query("SELECT watcher_id, region_kind, payload_json, confidence FROM observations WHERE image_id = ? ORDER BY id", r.Long("id"))
+                .Where(o => watcherIds.Contains(o.Str("watcher_id") ?? ""))
+                .Select(o => new Observation { WatcherId = o.Str("watcher_id")!, Kind = Names.ToRegionKind(o.Str("region_kind")!), Payload = CctvJson.Deserialize<RegionPayload>(o.Str("payload_json")) ?? new RegionPayload(), Confidence = o.Dbl("confidence") }).ToList();
+            if (observations.Count == 0) continue;
+            AnalyzeImage(new ImageRow(r.Long("id"), r.Str("file_path")!, r.Str("filename")!, r.Str("character_name")!, r.Str("capture_key")!, r.Str("captured_at")!), observations);
+        }
+    }
+
     // ---------- 진입점 ----------
 
     /// <summary>한 이미지의 관측을 이전 프레임과 비교해 이벤트와 현재 상태를 갱신한다. 이미지는 촬영 순서대로 넣는다.</summary>
@@ -622,13 +653,17 @@ public sealed class Analyzer(CctvStore store)
                 if (watcherRow == null) continue;
                 var watchType = Names.ToWatchType(watcherRow.Str("watch_type")!);
                 var current = group.ToList();
-                var previous = PreviousObservations(group.Key, image.CaptureKey);
+                var epoch = store.RegionEpoch(group.Key, image.CaptureKey);
+                var previous = PreviousObservations(group.Key, image.CaptureKey, epoch.ValidFrom);
+                // 새 출발점: 영역을 바꾸거나 감시를 멈췄다 다시 시작한 첫 프레임. 앞의 대상 · 시그니처 · 도킹 몫과 이어 붙이지 않는다.
+                var baseline = epoch.Baseline && previous.ImageId == null;
+                if (baseline) ClearWatcherState(group.Key);
                 var overview = TrackableOverviewRows(current.Where(o => o.Kind == RegionKind.Overview));
-                ReconcileCurrentObjects(group.Key, watchType, image, current, previous, overview);
+                ReconcileCurrentObjects(group.Key, watchType, image, current, previous, overview, baseline, epoch.ValidFrom);
 
                 var probe = ProbeRows(current.Where(o => o.Kind == RegionKind.Probe));
                 // 프로빙 창이 숨겨졌거나 비어 읽혔다고 모든 시그니처가 사라진 것은 아니다: 유효한 행이 하나라도 읽힌 성공 스캔에서만 비교한다.
-                if (probe.Count > 0) ReconcileCurrentSignatures(group.Key, image, probe, previous.ImageId);
+                if (probe.Count > 0) ReconcileCurrentSignatures(group.Key, image, probe, previous.ImageId, baseline);
             }
         });
     }
