@@ -63,6 +63,16 @@ public static class EventPresentation
     /// <summary>타임라인 표식(일시중지 · 재시작 · 영역 변경) 의 제목.</summary>
     public static string MarkerTitle(EventRow e) => e.Type switch { "watch_paused" => "감시 일시중지", "watch_resumed" => "감시 재시작", _ => "인식 영역 변경" };
 
+    /// <summary>표식 제목 뒤에 붙이는, 실제로 일시중지/재시작을 누른 시각 (타임라인의 시각은 CCTV 이미지 기준이라 따로 보여 준다). 없으면 null.</summary>
+    public static string? MarkerSuffix(EventRow e)
+    {
+        var (key, word) = e.Type switch { "watch_paused" => ("pausedAt", "일시중지"), "watch_resumed" => ("resumedAt", "재시작"), _ => (null, null) };
+        if (key == null || e.Details[key]?.ToString() is not { Length: >= 19 } iso) return null;
+        // 이벤트 시각과 날짜가 다르면 날짜도 보여 준다.
+        var sameDay = e.Time.Length >= 10 && iso.StartsWith(e.Time[..10]);
+        return $"{(sameDay ? "" : iso.Substring(5, 5) + " ")}{iso.Substring(11, 8)} 에 {word}";
+    }
+
     private static string MarkerDetail(EventRow e)
     {
         if (e.Type == "watch_paused") return "분석을 멈췄습니다. 자리를 잡은 뒤 재시작 지점을 고르세요.";

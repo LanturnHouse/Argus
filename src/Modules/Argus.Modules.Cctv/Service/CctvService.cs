@@ -348,12 +348,14 @@ public sealed class CctvService : IDisposable
     /// </summary>
     internal async Task ResumeWatchingAsync(Watcher watcher, ImageRow? startImage, IReadOnlyList<RegionDef> regions)
     {
+        // 표식의 시각은 CCTV 이미지 기준: 고른 스크린샷의 촬영 시각 ('지금 이후' 는 지금 가장 최근 스크린샷의 촬영 시각). 실제로 누른 시각은 따로 남긴다.
+        var now = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
         string startTime, startKey;
         if (startImage != null) { startTime = startImage.CapturedAt; startKey = startImage.CaptureKey; }
-        else { startTime = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture); startKey = CctvStore.KeyOf(startTime); }
+        else { startTime = Store.Db.One("SELECT captured_at FROM images WHERE character_name = ? ORDER BY capture_key DESC LIMIT 1", watcher.Character)?.Str("captured_at") ?? now; startKey = CctvStore.KeyOf(now); }
 
         Store.UpdateWatcherMeta(watcher.Id, watcher.Label, watcher.WatchType);   // 재시작 창에서 바꾼 이름 · 감시 타입
-        var plan = Store.ApplyRestartPoint(watcher.Character, startKey, startTime, new Dictionary<string, IReadOnlyList<RegionDef>> { [watcher.Id] = regions }, startImage?.Filename);
+        var plan = Store.ApplyRestartPoint(watcher.Character, startKey, startTime, new Dictionary<string, IReadOnlyList<RegionDef>> { [watcher.Id] = regions }, startImage?.Filename, now);
         _recognizer.ResetReuse();
         if (plan.Rollback)
         {

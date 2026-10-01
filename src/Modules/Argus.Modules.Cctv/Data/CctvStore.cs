@@ -297,10 +297,13 @@ public sealed class CctvStore : IDisposable
         var changed = false;
         Db.Transaction(() =>
         {
+            // 타임라인 표식의 시각은 시계가 아니라 CCTV 이미지 기준: 마지막으로 인식(분석)한 이미지의 촬영 시각. 실제로 누른 시각은 details 에 따로 남긴다.
+            var markerTime = Db.One("SELECT captured_at FROM images WHERE character_name = ? AND processing_status = 'processed' ORDER BY capture_key DESC LIMIT 1", character)?.Str("captured_at")
+                ?? Db.One("SELECT captured_at FROM images WHERE character_name = ? ORDER BY capture_key DESC LIMIT 1", character)?.Str("captured_at") ?? at;
             foreach (var w in Db.Query("SELECT id FROM watchers WHERE character_name = ? AND paused = 0", character))
             {
                 Db.Exec("UPDATE watchers SET paused = 1, paused_at = ? WHERE id = ?", at, w.Str("id"));
-                InsertMarker(w.Str("id")!, at, "watch_paused");
+                InsertMarker(w.Str("id")!, markerTime, "watch_paused", new JsonObject { ["pausedAt"] = at });
                 changed = true;
             }
         });
@@ -329,7 +332,7 @@ public sealed class CctvStore : IDisposable
     /// - startKey 이후까지 분석한 결과가 있었으면 되감기가 필요하다: 그 눈깔들의 분석 이벤트(표식 제외)와 현재 상태를 지운다. 돌려준 계획으로 호출한 쪽이 startKey 이전 이미지를 다시 분석기에 넣어 상태를 복원한다.
     /// - '재시작' 표식(과 영역이 바뀐 눈깔에는 '영역 변경' 표식)을 남긴다.
     /// </summary>
-    internal RestartPlan ApplyRestartPoint(string character, string startKey, string startTime, IReadOnlyDictionary<string, IReadOnlyList<RegionDef>> newRegions, string? startImageName)
+    internal RestartPlan ApplyRestartPoint(string character, string startKey, string startTime, IReadOnlyDictionary<string, IReadOnlyList<RegionDef>> newRegions, string? startImageName, string? resumedAt = null)
     {
         RestartPlan? plan = null;
         Db.Transaction(() =>
@@ -354,7 +357,7 @@ public sealed class CctvStore : IDisposable
                 if (rollback) Db.Exec("DELETE FROM events WHERE watcher_id = ? AND (event_time >= ? OR event_type NOT IN ('watch_paused', 'watch_resumed', 'region_changed'))", id, startTime);
                 else Db.Exec("DELETE FROM events WHERE watcher_id = ? AND event_type IN ('watch_resumed', 'region_changed') AND event_time >= ?", id, startTime);
 
-                InsertMarker(id, startTime, "watch_resumed", new JsonObject { ["startKey"] = startKey, ["startImage"] = startImageName, ["rollback"] = rollback, ["regionsChanged"] = changed });
+                InsertMarker(id, startTime, "watch_resumed", new JsonObject { ["startKey"] = startKey, ["startImage"] = startImageName, ["rollback"] = rollback, ["regionsChanged"] = changed, ["resumedAt"] = resumedAt });
                 if (changed) InsertMarker(id, startTime, "region_changed", new JsonObject { ["startKey"] = startKey, ["regions"] = set.Count });
             }
 

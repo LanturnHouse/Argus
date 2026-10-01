@@ -433,6 +433,7 @@ internal sealed class CctvView : UserControl
         var nameLine = new StackPanel { Orientation = Orientation.Horizontal };
         var marker = CctvStore.IsMarker(e.Type);
         nameLine.Children.Add(UiKit.Text(marker ? EventPresentation.MarkerTitle(e) : e.Type.StartsWith("signature_") ? (e.Character ?? "---") : (e.Character ?? "미확인 대상"), 13.5, FontWeights.SemiBold));
+        if (marker && EventPresentation.MarkerSuffix(e) is { } suffix) nameLine.Children.Add(UiKit.Dim(suffix, 12, new Thickness(10, 1, 0, 0), false));   // 언제 일시중지/재시작했는지 (실제 시각)
         if (EventPresentation.Verification(e) is { } v) nameLine.Children.Add(UiKit.Chip(v, v == "확정" ? UiKit.GoodBg : UiKit.WarnBg, v == "확정" ? UiKit.Good : UiKit.Warn, null, new Thickness(8, 0, 0, 0)));
         main.Children.Add(nameLine);
         main.Children.Add(UiKit.Dim(EventPresentation.Detail(e), 12, new Thickness(0, 1, 0, 0), false));
