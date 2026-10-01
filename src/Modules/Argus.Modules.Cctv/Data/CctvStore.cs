@@ -310,16 +310,23 @@ public sealed class CctvStore : IDisposable
         return changed;
     }
 
+    /// <summary>이 캐릭터가 마지막으로 분석(인식)한 이미지. 없으면 null.</summary>
+    internal ImageRow? LastProcessedImage(string character)
+    {
+        var r = Db.One("SELECT id, file_path, filename, character_name, capture_key, captured_at FROM images WHERE character_name = ? AND processing_status = 'processed' ORDER BY capture_key DESC LIMIT 1", character);
+        return r == null ? null : new ImageRow(r.Long("id"), r.Str("file_path")!, r.Str("filename")!, r.Str("character_name")!, r.Str("capture_key")!, r.Str("captured_at")!);
+    }
+
     public sealed record RestartImage(ImageRow Image, string Status);
 
     /// <summary>
-    /// 재시작 지점을 고르는 목록: 일시중지 시각 이전 <paramref name="before"/> 장과 그 이후의 모든 이미지(최대 <paramref name="afterLimit"/> 장), 오래된 것부터.
+    /// 재시작 지점을 고르는 목록: 기준 키(마지막으로 분석한 이미지) 이전 <paramref name="before"/> 장과 그 이후의 이미지(오래된 것부터 최대 <paramref name="afterLimit"/> 장), 오래된 것부터.
     /// </summary>
-    internal (List<RestartImage> Before, List<RestartImage> After) ImagesAround(string character, string pausedKey, int before = 25, int afterLimit = 200)
+    internal (List<RestartImage> Before, List<RestartImage> After) ImagesAround(string character, string pausedKey, int before = 25, int afterLimit = 1000)
     {
         RestartImage Map(Row r) => new(new ImageRow(r.Long("id"), r.Str("file_path")!, r.Str("filename")!, r.Str("character_name")!, r.Str("capture_key")!, r.Str("captured_at")!), r.Str("processing_status") ?? "");
         var b = Db.Query("SELECT id, file_path, filename, character_name, capture_key, captured_at, processing_status FROM images WHERE character_name = ? AND capture_key <= ? ORDER BY capture_key DESC LIMIT ?", character, pausedKey, before).Select(Map).Reverse().ToList();
-        var a = Db.Query("SELECT id, file_path, filename, character_name, capture_key, captured_at, processing_status FROM images WHERE character_name = ? AND capture_key > ? ORDER BY capture_key DESC LIMIT ?", character, pausedKey, afterLimit).Select(Map).Reverse().ToList();
+        var a = Db.Query("SELECT id, file_path, filename, character_name, capture_key, captured_at, processing_status FROM images WHERE character_name = ? AND capture_key > ? ORDER BY capture_key LIMIT ?", character, pausedKey, afterLimit).Select(Map).ToList();
         return (b, a);
     }
 

@@ -298,6 +298,7 @@ public sealed class CctvService : IDisposable
 
         // 읽는 동안 감시 설정이 바뀌어 이 이미지가 다시 대기로 돌아갔다면 이번 결과는 버린다.
         if (Store.ImageStatus(image.Id) != "processing") return;
+        if (Store.IsPaused(image.Character)) { Store.MarkPending(image.Id); return; }   // 읽는 동안 일시중지했다: 이 이미지는 분석하지 않은 것으로 남긴다 (결과 없이 '완료'로 표시하지 않는다)
         var active = observations.Where(o => Store.WatcherEnabled(o.WatcherId)).ToList();
         var before = Store.MaxEventId();
         Store.CompleteImage(image.Id, active);
@@ -335,11 +336,14 @@ public sealed class CctvService : IDisposable
     }
 
     /// <summary>재시작 지점 후보: 일시중지 시각과 그 전후 스크린샷들.</summary>
-    internal (string PausedAt, List<CctvStore.RestartImage> Before, List<CctvStore.RestartImage> After) RestartCandidates(Watcher watcher)
+    internal (string PausedAt, string DividerAt, List<CctvStore.RestartImage> Before, List<CctvStore.RestartImage> After) RestartCandidates(Watcher watcher)
     {
         var pausedAt = watcher.PausedAt ?? DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
-        var (before, after) = Store.ImagesAround(watcher.Character, CctvStore.KeyOf(pausedAt));
-        return (pausedAt, before, after);
+        // 목록의 기준은 시계가 아니라 이미지: 마지막으로 분석한 이미지까지가 '이미 분석한 구간', 그 뒤가 '아직 분석하지 못한 구간'(일시중지 때까지 쌓인 것 포함).
+        var last = Store.LastProcessedImage(watcher.Character);
+        var dividerKey = last?.CaptureKey ?? CctvStore.KeyOf(pausedAt);
+        var (before, after) = Store.ImagesAround(watcher.Character, dividerKey);
+        return (pausedAt, last?.CapturedAt ?? pausedAt, before, after);
     }
 
     /// <summary>

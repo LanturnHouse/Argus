@@ -26,7 +26,7 @@ internal static class ResumeWindow
     /// <summary>재시작 지점 고르기. 취소하면 null, 고르면 그 이미지(null 이면 '지금 이후').</summary>
     private static (ImageRow? Image, bool Chosen)? PickStart(Window? owner, CctvService svc, Watcher watcher)
     {
-        var (pausedAt, before, after) = svc.RestartCandidates(watcher);
+        var (pausedAt, dividerAt, before, after) = svc.RestartCandidates(watcher);
         (ImageRow? Image, bool Chosen)? result = null;   // null: 취소
         var host = new ContentControl();
         Window window = null!;
@@ -54,7 +54,7 @@ internal static class ResumeWindow
 
             int index = 0;
             foreach (var b in before) Add(ImageRow(svc, b.Image, b.Status), index++);
-            var separator = Add(UiKit.Text($"━━  감시를 일시중지한 시각  {(pausedAt.Length >= 19 ? pausedAt.Substring(11, 8) : pausedAt)}  ━━", 12, FontWeights.SemiBold, UiKit.Warn, new Thickness(0, 6, 0, 6)), null);
+            var separator = Add(UiKit.Text($"━━  여기까지 분석함 (마지막으로 인식한 이미지 {(dividerAt.Length >= 19 ? dividerAt.Substring(11, 8) : dividerAt)})  ·  실제 일시중지 {(pausedAt.Length >= 19 ? pausedAt.Substring(11, 8) : pausedAt)}  ━━", 12, FontWeights.SemiBold, UiKit.Warn, new Thickness(0, 6, 0, 6)), null);
             foreach (var a in after) Add(ImageRow(svc, a.Image, a.Status), index++);
             list.Loaded += (_, _) => list.ScrollIntoView(separator);
 
@@ -65,7 +65,7 @@ internal static class ResumeWindow
             var root = new DockPanel { Margin = new Thickness(22, 18, 22, 18) };
             var head = new StackPanel();
             head.Children.Add(UiKit.Text($"감시 재시작 — {watcher.Label}", 18, FontWeights.Bold));
-            head.Children.Add(UiKit.Dim("자리를 잡은 뒤 처음 보이는 스크린샷을 찾으세요. 목록에서 스크린샷을 누르면 크게 보면서 이전/다음으로 넘겨 볼 수 있고, 가운데 '확인'으로 그 스크린샷을 재시작 지점으로 고릅니다. 목록의 위쪽은 일시중지 전, 아래쪽은 일시중지 뒤에 찍힌 것입니다.", 12, new Thickness(0, 2, 0, 12)));
+            head.Children.Add(UiKit.Dim("자리를 잡은 뒤 처음 보이는 스크린샷을 찾으세요. 목록에서 스크린샷을 누르면 크게 보면서 이전/다음으로 넘겨 볼 수 있고, 가운데 '확인'으로 그 스크린샷을 재시작 지점으로 고릅니다. 목록의 위쪽은 이미 분석한 구간, 구분선 아래쪽은 아직 분석하지 못한 구간(분석이 뒤처진 채 일시중지했거나 일시중지 중에 쌓인 것)입니다.", 12, new Thickness(0, 2, 0, 12)));
             head.Children.Add(nowBox);
             DockPanel.SetDock(head, Dock.Top);
             DockPanel.SetDock(footer, Dock.Bottom);
@@ -91,7 +91,7 @@ internal static class ResumeWindow
                 image.Source = DialogKit.LoadImage(it.Image.FilePath);
                 title.Text = $"{it.Image.CapturedAt.Substring(11, 12)}   ({index + 1} / {all.Count})";
                 var state = it.Status switch { "processed" => "분석됨", "skipped" => "건너뜀", "failed" => "실패", _ => "대기" };
-                var side = string.CompareOrdinal(it.Image.CapturedAt, pausedAt) <= 0 ? "일시중지 전" : "일시중지 뒤";
+                var side = string.CompareOrdinal(it.Image.CapturedAt, dividerAt) <= 0 ? "이미 분석한 구간" : "아직 분석하지 못한 구간";
                 meta.Text = $"{it.Image.Filename}  ·  {state}  ·  {side}";
                 prev.IsEnabled = index > 0; next.IsEnabled = index < all.Count - 1;
             }
