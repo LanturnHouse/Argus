@@ -16,7 +16,7 @@ public sealed class Analyzer(CctvStore store)
     /// 도킹 숫자는 오버뷰보다 늦게 바뀐다(몇 초). 오버뷰에서 행이 생기거나 사라진 뒤 이 시간 안에 숫자가 따라 바뀌면 언독 · 도킹으로 확정한다.
     /// 숫자가 오버뷰보다 먼저 바뀌는 경우도 같은 시간 안이면 짝지어 준다.
     /// </summary>
-    private const int DockConfirmWindowMs = 20_000;
+    private const int DockConfirmWindowMs = 6_000;
 
     private Db Db => store.Db;
 
