@@ -8,7 +8,7 @@ public sealed class CaptureModule : IArgusModule, IDashboardContributor
     private CaptureService? _service;
 
     public string Id => "argus.capture";
-    public string Icon => "";
+    public string Icon => "";
     public string DisplayName => "CCTV";
 
     public Task StartAsync(IModuleContext context, CancellationToken ct)
