@@ -85,7 +85,7 @@ public sealed class CctvService : IDisposable
 
     public VisionClient Vision => _vision;
 
-    /// <summary>분석할 폴더: 설정에서 지정했으면 그것, 아니면 화면 감시 캡처가 저장하는 폴더.</summary>
+    /// <summary>분석할 폴더: 설정에서 지정했으면 그것, 아니면 CCTV(화면 감시)가 저장하는 폴더.</summary>
     public string ImageFolder
     {
         get

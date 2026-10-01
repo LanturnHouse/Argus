@@ -23,7 +23,7 @@ public sealed class AlertsModule : IArgusModule
     public string Icon => "";
     public string DisplayName => "알림";
 
-    // 알림음은 화면 감시 캡처의 알림에만 쓰이므로 설정 페이지에서 그 하위 항목으로 보여준다.
+    // 알림음은 CCTV 알림에만 쓰이므로 설정 페이지에서 그 하위 항목으로 보여준다.
     public string? SettingsParentId => "argus.capture";
 
     public Task StartAsync(IModuleContext context, CancellationToken ct)

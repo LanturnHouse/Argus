@@ -9,7 +9,14 @@ using Argus.Ui;
 
 namespace Argus.App;
 
-public sealed record NavItem(string Icon, string Title, UIElement Content);
+public sealed record NavItem(string Icon, string Title, UIElement Content, bool IsChild = false)
+{
+    /// <summary>하위 항목은 들여쓰고 └ 로 부모에 이어 보이게, 조금 작게 보여준다.</summary>
+    public Thickness Indent => IsChild ? new Thickness(14, 0, 0, 0) : new Thickness(0);
+    public string Connector => IsChild ? "└" : "";
+    public double IconWidth => IsChild ? 0 : 24;
+    public double TitleSize => IsChild ? 13 : 14;
+}
 
 public partial class MainWindow : Window
 {
@@ -21,10 +28,14 @@ public partial class MainWindow : Window
         // 대시보드: 각 모듈이 내놓는 정보(IDashboardContributor)를 모아서 보여준다.
         var dashboard = new DashboardView(app.Registry, app.Host.Modules.OfType<IDashboardContributor>());
         var items = new List<NavItem> { new("", "대시보드", dashboard) };
-        foreach (var m in app.Host.Modules)
+        var views = app.Host.Modules.Select(m => (Module: m, View: m.CreateView() as UIElement)).Where(x => x.View != null).ToList();
+        foreach (var (m, view) in views)
         {
-            if (m.CreateView() is UIElement view)
-                items.Add(new NavItem(m.Icon, m.DisplayName, view));
+            // 하위 항목은 부모 탭 바로 아래에서 보여준다 (부모 탭이 없으면 일반 항목).
+            if (m.NavParentId is { } pid && views.Any(x => x.Module.Id == pid)) continue;
+            items.Add(new NavItem(m.Icon, m.DisplayName, view!));
+            foreach (var (child, childView) in views.Where(x => x.Module.NavParentId == m.Id))
+                items.Add(new NavItem(child.Icon, child.DisplayName, childView!, IsChild: true));
         }
         // 모듈들의 전역 설정은 사이드바 '설정' 페이지 하나로 모은다.
         if (SettingsPage.Create(app.Host.Modules) is { } settings)

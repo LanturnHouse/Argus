@@ -6,7 +6,7 @@ public sealed class CctvSettings
     /// <summary>비전 모델(Ollama) 설정.</summary>
     public VisionSettings Vision { get; set; } = new();
 
-    /// <summary>분석할 스크린샷 폴더. 비워 두면 화면 감시 캡처가 저장하는 폴더를 쓴다.</summary>
+    /// <summary>분석할 스크린샷 폴더. 비워 두면 CCTV 가 저장하는 폴더를 쓴다.</summary>
     public string ImageFolder { get; set; } = "";
 
     /// <summary>폴더를 몇 초마다 확인하는가.</summary>

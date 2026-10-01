@@ -37,7 +37,7 @@ internal sealed class CctvView : UserControl
     {
         _svc = svc;
         var root = new StackPanel();
-        root.Children.Add(UiKit.Text("CCTV", 24, FontWeights.Bold));
+        root.Children.Add(UiKit.Text("분석", 24, FontWeights.Bold));
         root.Children.Add(UiKit.Dim("스크린샷의 오버뷰 · 프로빙 창 · 도킹 숫자를 비전 모델로 읽어 출입 · 도킹 · 시그니처 변화를 판정합니다.", 12, new Thickness(0, 4, 0, 16)));
         root.Children.Add(_analysisHost);
         root.Children.Add(_warningHost);

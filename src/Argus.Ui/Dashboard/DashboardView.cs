@@ -32,7 +32,7 @@ public sealed class DashboardView : UserControl
         (DashboardColumns.Logi, "✚ LOGI", 70, 0.8),
         (DashboardColumns.Neut, "⚡ 뉴트", 70, 0.8),
         (DashboardColumns.Status, "상태", 140, 1.7),
-        (DashboardColumns.Watch, "화면 감시", 170, 2.0),
+        (DashboardColumns.Watch, "CCTV", 170, 2.0),
     ];
 
     private readonly IClientRegistry _clients;

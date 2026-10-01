@@ -5,7 +5,7 @@ using System.Windows.Controls;
 
 namespace Argus.Modules.Capture;
 
-/// <summary>설정 페이지의 '화면 감시' 섹션: 스크린샷 저장 폴더.</summary>
+/// <summary>설정 페이지의 'CCTV' 섹션: 스크린샷 저장 폴더.</summary>
 internal sealed class CaptureSettingsView : UserControl
 {
     public CaptureSettingsView(CaptureService service)
@@ -13,7 +13,7 @@ internal sealed class CaptureSettingsView : UserControl
         var title = new TextBlock { Text = "스크린샷 저장 폴더", FontWeight = FontWeights.SemiBold };
         var desc = new TextBlock
         {
-            Text = "변화가 감지되면 CCTV{시각}_{캐릭터}.png 로 이 폴더에 저장되고, CCTV 탭이 이 폴더를 분석합니다.",
+            Text = "변화가 감지되면 CCTV{시각}_{캐릭터}.png 로 이 폴더에 저장되고, 분석이 이 폴더의 파일을 읽습니다.",
             Margin = new Thickness(0, 2, 0, 0),
         };
         desc.SetResourceReference(FrameworkElement.StyleProperty, "Dim");

@@ -10,7 +10,7 @@ public static class DashboardColumns
     public const string Logi = "logi";       // 받는 LOGI
     public const string Neut = "neut";       // 받는 뉴트
     public const string Status = "status";   // 경고·상태 (레드박싱, 태클 등)
-    public const string Watch = "watch";     // 화면 감시
+    public const string Watch = "watch";     // CCTV
 }
 
 /// <summary>대시보드에 붙는 작은 표시 하나. Column 은 <see cref="DashboardColumns"/> 중 하나, Color 는 글자색(#RRGGBB)을 직접 정하고 싶을 때만 쓴다.</summary>

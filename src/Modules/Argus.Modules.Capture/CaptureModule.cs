@@ -9,7 +9,7 @@ public sealed class CaptureModule : IArgusModule, IDashboardContributor
 
     public string Id => "argus.capture";
     public string Icon => "";
-    public string DisplayName => "화면 감시 캡처";
+    public string DisplayName => "CCTV";
 
     public Task StartAsync(IModuleContext context, CancellationToken ct)
     {
@@ -39,7 +39,7 @@ public sealed class CaptureModule : IArgusModule, IDashboardContributor
         if (_service?.GetConfig(character) is not { } cfg) return [];
         var chips = new List<DashboardChip>
         {
-            !cfg.HasRoi ? new("감시 영역 미지정", ChipTone.Warn, "화면 감시 캡처에서 감시할 영역을 지정하세요", Column: DashboardColumns.Watch)
+            !cfg.HasRoi ? new("감시 영역 미지정", ChipTone.Warn, "CCTV에서 감시할 영역을 지정하세요", Column: DashboardColumns.Watch)
             : _service.IsRunning(character) ? new("감시 중", ChipTone.Good, _service.GetStatus(character), Column: DashboardColumns.Watch)
             : new("감시 정지", ChipTone.Neutral, Column: DashboardColumns.Watch),
         };

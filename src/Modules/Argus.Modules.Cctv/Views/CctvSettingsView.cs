@@ -58,7 +58,7 @@ internal sealed class CctvSettingsView : UserControl
         btns.Children.Add(UiKit.Button("변경", PickFolder)); btns.Children.Add(UiKit.Button("자동", () => { _svc.Settings.ImageFolder = ""; Save(); Load(); })); btns.Children.Add(UiKit.Button("열기", () => { if (Directory.Exists(_svc.ImageFolder)) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{_svc.ImageFolder}\"") { UseShellExecute = true }); }));
         ((Button)btns.Children[0]).Margin = new Thickness(8, 0, 0, 0);
         folderRow.Children.Add(btns); folderRow.Children.Add(_folder);
-        root.Children.Add(UiKit.Section("분석할 스크린샷 폴더", "'자동'이면 화면 감시 캡처의 저장 폴더를 씁니다. CCTV{날짜시각}_{캐릭터}.png 파일만 분석합니다.", folderRow));
+        root.Children.Add(UiKit.Section("분석할 스크린샷 폴더", "'자동'이면 CCTV 의 저장 폴더를 씁니다. CCTV{날짜시각}_{캐릭터}.png 파일만 분석합니다.", folderRow));
 
         var dataBox = new StackPanel();
         dataBox.Children.Add(_data);
@@ -147,7 +147,7 @@ internal sealed class CctvSettingsView : UserControl
 
     private void PickFolder()
     {
-        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "CCTV 스크린샷 폴더", InitialDirectory = _svc.ImageFolder };
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "스크린샷 폴더", InitialDirectory = _svc.ImageFolder };
         if (dlg.ShowDialog() != true) return;
         _svc.Settings.ImageFolder = dlg.FolderName; Save(); Load();
     }

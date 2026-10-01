@@ -11,7 +11,7 @@
         <!-- 클라이언트 목록 -->
         <DockPanel>
             <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
-                <TextBlock Text="화면 감시" FontSize="24" FontWeight="Bold"/>
+                <TextBlock Text="CCTV" FontSize="24" FontWeight="Bold"/>
             </StackPanel>
             <ListBox x:Name="ClientList" SelectionChanged="ClientList_SelectionChanged">
                 <ListBox.ItemTemplate>
