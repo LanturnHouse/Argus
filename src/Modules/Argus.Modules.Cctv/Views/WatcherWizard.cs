@@ -173,7 +173,7 @@ internal sealed class WatcherWizard
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         if (resume)
         {
-            _backButton = UiKit.Button("←  이전", () => { _outcome = ResumeOutcome.Back; _window.Close(); }, "GhostButton");
+            _backButton = UiKit.Button("←  이전", () => { _outcome = ResumeOutcome.Back; Window.GetWindow(_backButton)?.Close(); }, "GhostButton");
             _backButton.Margin = new Thickness(0, 0, 8, 0);
             buttons.Children.Add(_backButton);
         }
