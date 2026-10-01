@@ -31,6 +31,7 @@ internal sealed class PreviewTile : IDisposable
     // 드래그(편집 모드) 상태
     private DragZone _zone;
     private bool _dragging;
+    private bool _rightDown;   // 우클릭을 누르고 있는 중 (끌면 이동, 끌지 않고 떼면 메뉴)
     private Point32 _dragCursor;
     private Rect32 _dragStart;
     private List<Rect32> _dragOthers = [];
@@ -64,7 +65,8 @@ internal sealed class PreviewTile : IDisposable
         _host.MouseLeftButtonDown += OnMouseDown;
         _host.MouseMove += OnMouseMove;
         _host.MouseLeftButtonUp += OnMouseUp;
-        _host.MouseRightButtonUp += (_, _) => { };
+        _host.MouseRightButtonDown += OnRightDown;
+        _host.MouseRightButtonUp += OnRightUp;
     }
 
     private void OnHostInitialized()
@@ -226,9 +228,52 @@ internal sealed class PreviewTile : IDisposable
         e.Handled = true;
     }
 
+    /// <summary>편집 모드가 아닐 때: 우클릭을 누른 채 끌면 프리뷰를 옮긴다 (다른 프리뷰·화면 가장자리에 붙는다). 끌지 않고 떼면 메뉴.</summary>
+    private void OnRightDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_svc.EditMode) return;
+        Win32.GetCursorPos(out _dragCursor);
+        Win32.GetWindowRect(_hostHwnd, out _dragStart);
+        _zone = DragZone.Move;
+        _dragOthers = _svc.OtherBounds(this);
+        _dragMonitors = Win32.Monitors();
+        _dragGroup = [];
+        _groupResized = false;
+        _rightDown = true;
+        _host.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnRightUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_rightDown) return;
+        _rightDown = false;
+        _host.ReleaseMouseCapture();
+        e.Handled = true;
+        if (_dragging) { _dragging = false; _svc.SaveBounds(this); return; }
+        ShowMenu();
+    }
+
+    private void ShowMenu()
+    {
+        var menu = new System.Windows.Controls.ContextMenu { PlacementTarget = _host, Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
+        var reset = new System.Windows.Controls.MenuItem { Header = "기본 크기로" };
+        reset.Click += (_, _) => _svc.ResetSize(this);
+        var hide = new System.Windows.Controls.MenuItem { Header = "이 프리뷰 숨기기" };
+        hide.Click += (_, _) => _svc.SetVisible(Client.Character, false);
+        menu.Items.Add(reset); menu.Items.Add(hide);
+        menu.IsOpen = true;
+    }
+
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
         Win32.GetCursorPos(out var cur);
+        if (_rightDown && !_dragging)
+        {
+            if (e.RightButton != MouseButtonState.Pressed) { _rightDown = false; _host.ReleaseMouseCapture(); return; }
+            if (Math.Abs(cur.X - _dragCursor.X) + Math.Abs(cur.Y - _dragCursor.Y) < 5) return;   // 살짝 흔들린 것은 끌기로 보지 않는다
+            _dragging = true;
+        }
         if (!_dragging)
         {
             if (_svc.EditMode)
@@ -270,6 +315,7 @@ internal sealed class PreviewTile : IDisposable
 
     private void OnMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (_rightDown) return;
         if (_dragging)
         {
             _dragging = false;

@@ -15,6 +15,7 @@ public sealed partial class PreviewService : IDisposable
     private readonly IModuleContext _ctx;
     private readonly Dispatcher _ui;
     private readonly Dictionary<string, PreviewTile> _tiles = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _loggedOut = new(StringComparer.OrdinalIgnoreCase);   // 로그아웃해서 창 제목이 "EVE" 가 됐지만 프리뷰는 남겨 둔 캐릭터
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private IDisposable? _sub, _combatSub, _iconSub;
@@ -82,20 +83,41 @@ public sealed partial class PreviewService : IDisposable
         // 같은 캐릭터명의 창이 여러 개면 첫 번째만 쓴다.
         var clients = all.GroupBy(c => c.Character, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).ToList();
 
+        // 목록에서 빠진 캐릭터: 창이 아직 있으면 로그아웃한 것이다 (제목이 "EVE" 로 바뀌어 목록에서 빠짐). 프리뷰를 그 자리에 남겨 두고,
+        // 같은 창에 다른 캐릭터가 로그인하거나 창이 닫히면 치운다. 창이 이미 없으면 바로 치운다.
+        var liveHwnds = clients.Select(c => c.Hwnd).ToHashSet();
         foreach (var name in _tiles.Keys.Where(n => clients.All(c => !string.Equals(c.Character, n, StringComparison.OrdinalIgnoreCase))).ToList())
         {
-            _tiles[name].Dispose();
-            _tiles.Remove(name);
+            var hwnd = _tiles[name].Client.Hwnd;
+            if (!liveHwnds.Contains(hwnd) && Win32.IsWindow(hwnd)) { _loggedOut.Add(name); continue; }
+            RemoveTile(name);
         }
 
         foreach (var c in clients)
         {
+            _loggedOut.Remove(c.Character);
             if (_tiles.TryGetValue(c.Character, out var existing)) { existing.SetClient(c); continue; }
             var tile = new PreviewTile(this, c);
             tile.InitAspect();
             _tiles[c.Character] = tile;
             ApplyLayout(tile);
         }
+        Changed?.Invoke();
+    }
+
+    private void RemoveTile(string name)
+    {
+        if (_tiles.Remove(name, out var tile)) tile.Dispose();
+        _loggedOut.Remove(name);
+    }
+
+    /// <summary>로그아웃한 채 남아 있던 프리뷰의 창이 닫혔으면 치운다.</summary>
+    private void PruneLoggedOut()
+    {
+        if (_loggedOut.Count == 0) return;
+        var gone = _loggedOut.Where(n => !_tiles.TryGetValue(n, out var t) || !Win32.IsWindow(t.Client.Hwnd)).ToList();
+        if (gone.Count == 0) return;
+        foreach (var n in gone) RemoveTile(n);
         Changed?.Invoke();
     }
 
@@ -195,6 +217,7 @@ public sealed partial class PreviewService : IDisposable
     private void OnTick()
     {
         EvaluateFocus();
+        PruneLoggedOut();
         if (_combat.Count > 0 && Environment.TickCount64 - _combatAt > CombatStaleMs)   // 전투 로그 쪽이 멈추면 낡은 수치를 지운다
         {
             _combat.Clear();
@@ -304,7 +327,7 @@ public sealed partial class PreviewService : IDisposable
     internal List<(string Character, long At)> SurgeOrder() =>
         [.. ActivePreset.Clients
             .Select(l => (Layout: l, Snap: SnapshotFor(l.Character)))
-            .Where(x => _tiles.ContainsKey(x.Layout.Character) && SurgeActive(x.Snap, x.Layout))
+            .Where(x => _tiles.ContainsKey(x.Layout.Character) && !_loggedOut.Contains(x.Layout.Character) && SurgeActive(x.Snap, x.Layout))
             .Select(x => (x.Layout.Character, x.Snap!.SurgeAt))
             .OrderBy(x => x.SurgeAt)];
 
