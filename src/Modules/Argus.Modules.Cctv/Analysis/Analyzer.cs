@@ -316,6 +316,18 @@ public sealed class Analyzer(CctvStore store)
         return row[b.Length];
     }
 
+    /// <summary>두 이름이 끝의 로마 숫자·숫자(I, II, III, 2 ...)만 서로 다른가.</summary>
+    internal static bool DifferByNumeralSuffix(string? left, string? right)
+    {
+        static string? Suffix(string? name)
+        {
+            var parts = NormalizeIdentity(name).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length > 1 && Regex.IsMatch(parts[^1], @"^(?:[IVXLC]+|\d+)$") ? parts[^1] : null;
+        }
+        var a = Suffix(left); var b = Suffix(right);
+        return a != null && b != null && a != b;
+    }
+
     private static bool OverviewIsReliable(List<Observation> observations)
     {
         var overview = observations.Where(o => o.Kind == RegionKind.Overview).ToList();
@@ -346,19 +358,29 @@ public sealed class Analyzer(CctvStore store)
         var matchedExisting = new HashSet<string>();
         var resolved = new List<(string Identity, OverviewRow Row)>();   // 삽입 순서를 유지 (같은 identity 는 나중 행이 덮어쓴다)
 
-        foreach (var row in rows)
+        // 1차: 이름이 정확히 같은 대상끼리 먼저 짝짓는다. 2차(비슷한 이름)는 1차에서 남은 대상만 후보로 삼는다:
+        // 이름이 한 글자 다른 두 대상(예: "Pilot I" 와 "Pilot II")이 함께 있을 때 서로를 같은 대상으로 착각하지 않게 한다.
+        var assigned = new string?[rows.Count];
+        for (int i = 0; i < rows.Count; i++)
         {
-            var exact = NormalizeIdentity(row.Name);
-            string? identity = existing.ContainsKey(exact) && !matchedExisting.Contains(exact) ? exact : null;
+            var exact = NormalizeIdentity(rows[i].Name);
+            if (existing.ContainsKey(exact) && !matchedExisting.Contains(exact)) { assigned[i] = exact; matchedExisting.Add(exact); }
+        }
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var identity = assigned[i];
             if (identity == null)
             {
                 // 이름이 조금 다르게 읽혔을 때: 함선이 같고 이름 길이·편집 거리 차이가 2 이하인 후보가 정확히 하나일 때만 같은 대상으로 본다.
+                // 끝의 로마 숫자·숫자만 다른 이름("Pilot I" / "Pilot II")은 읽기 오류가 아니라 다른 캐릭터로 본다.
                 var rowShip = NormalizeIdentity(row.Ship);
                 var candidates = existingRows.Where(c => !matchedExisting.Contains(c.Identity) && NormalizeIdentity(c.Ship) == rowShip
-                    && Math.Abs(NormalizeIdentity(c.Name).Length - NormalizeIdentity(row.Name).Length) <= 2 && EditDistance(c.Name, row.Name) <= 2).ToList();
+                    && Math.Abs(NormalizeIdentity(c.Name).Length - NormalizeIdentity(row.Name).Length) <= 2 && EditDistance(c.Name, row.Name) <= 2
+                    && !DifferByNumeralSuffix(c.Name, row.Name)).ToList();
                 if (candidates.Count == 1) identity = candidates[0].Identity;
             }
-            identity ??= exact;
+            identity ??= NormalizeIdentity(row.Name);
             matchedExisting.Add(identity);
             var at = resolved.FindIndex(x => x.Identity == identity);
             if (at >= 0) resolved[at] = (identity, row); else resolved.Add((identity, row));
@@ -469,7 +491,10 @@ public sealed class Analyzer(CctvStore store)
             // 마지막 속도가 높으면 워프아웃 추정, 직전 유효 속도보다 올랐으면 확정. 도킹 카운터 변화는 이탈 후보가 모호하지 않을 때만 도킹을 확정한다.
             var isAccelerating = Finite(row.PreviousSpeed) && row.Speed > row.PreviousSpeed;
             var isWarpSpeed = !isCovert && Finite(row.Speed) && row.Speed >= WarpSpeedThresholdMps;
-            var warpConfirmed = isWarpSpeed && isAccelerating;
+            // 처음 보였을 때 저속이었다가 지금 워프 속도라면 가속해서 워프에 들어간 것이다 (마지막 두 프레임의 속도가 비슷해 가속이 안 보여도 확정).
+            var entrySpeed = row.EntryEventId != null ? Db.One("SELECT speed_mps FROM events WHERE id = ?", row.EntryEventId)?.Dbl("speed_mps") : null;
+            var roseFromLowSpeed = Finite(entrySpeed) && entrySpeed < WarpSpeedThresholdMps;
+            var warpConfirmed = isWarpSpeed && (isAccelerating || roseFromLowSpeed);
             var type = "disappeared"; var reason = "overview_row_removed";
             if (isCovert) { type = "covop_out"; reason = "covert_ops_hull"; }
             else if (warpConfirmed) { type = "warp_out"; reason = "accelerated_to_warp_speed"; }
