@@ -54,7 +54,7 @@
             </StackPanel>
             <StackPanel>
                 <TextBlock Text="프리뷰" FontSize="24" FontWeight="Bold"/>
-                <TextBlock Text="실행 중인 클라이언트의 실시간 축소 화면. 클릭하면 그 클라이언트로 전환됩니다." Style="{DynamicResource Dim}" Margin="0,4,0,0"/>
+                <TextBlock Text="클릭하면 그 클라이언트로 전환됩니다." Style="{DynamicResource Dim}" Margin="0,4,0,0"/>
             </StackPanel>
         </DockPanel>
 
@@ -62,7 +62,7 @@
         <Border x:Name="EditBanner" DockPanel.Dock="Top" Visibility="Collapsed" CornerRadius="10" Padding="16,11" Margin="0,0,0,12"
                 Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1">
             <TextBlock TextWrapping="Wrap"
-                       Text="배치 편집 중입니다. 프리뷰를 끌어서 이동하고, 가장자리·모서리를 끌어서 크기를 바꾸세요. Ctrl 을 누른 채 크기를 바꾸면 표시 중인 모든 프리뷰가 함께 바뀌고, Shift 를 누른 채 프리뷰를 클릭하면 그 프리뷰가 기본 크기로 돌아갑니다. 다른 프리뷰나 화면 가장자리에 가까이 가면 자석처럼 붙습니다. 끝나면 '배치 편집'을 다시 눌러 끄세요. (이 동안에는 클릭해도 클라이언트로 전환되지 않습니다.)"/>
+                       Text="배치 편집 중: 끌어서 이동하고 가장자리를 끌어 크기를 바꿉니다. Ctrl+크기 변경은 모든 프리뷰에, Shift+클릭은 그 프리뷰를 기본 크기로 되돌립니다. 끝나면 '배치 편집'을 다시 누르세요."/>
         </Border>
 
         <Grid>
@@ -78,7 +78,6 @@
                     <Border DockPanel.Dock="Top" Padding="16,12" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
                         <StackPanel>
                             <TextBlock Text="레이아웃 프리셋" Style="{DynamicResource CardTitle}"/>
-                            <TextBlock Text="프리셋마다 프리뷰 위치·크기·표시, 사이클, 단축키가 따로 저장됩니다." Style="{DynamicResource Dim}" Margin="0,2,0,0"/>
                         </StackPanel>
                     </Border>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,0,0,0">
@@ -147,7 +146,7 @@
                     <Border DockPanel.Dock="Top" Padding="16,12" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
                         <StackPanel>
                             <TextBlock Text="클라이언트" Style="{DynamicResource CardTitle}"/>
-                            <TextBlock Text="≡ 를 끌어 위아래로 옮기면 그 순서가 사이클 순서가 됩니다. 사이클 버튼을 켠(밝은) 클라이언트만 다음/이전 전환에 포함됩니다."
+                            <TextBlock Text="≡ 를 끌어 사이클 순서를 바꿉니다. 사이클 버튼이 켜진 클라이언트만 다음/이전 전환에 포함됩니다."
                                        Style="{DynamicResource Dim}" Margin="0,2,0,0"/>
                         </StackPanel>
                     </Border>
@@ -159,7 +158,7 @@
 
                     <Grid>
                         <TextBlock x:Name="Empty" Style="{DynamicResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Text="실행 중인 EVE 클라이언트가 없습니다. 로그인하면 프리뷰가 자동으로 나타납니다."/>
+                                   Text="실행 중인 EVE 클라이언트가 없습니다."/>
                         <ListBox x:Name="ClientList" Margin="8" HorizontalContentAlignment="Stretch">
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">

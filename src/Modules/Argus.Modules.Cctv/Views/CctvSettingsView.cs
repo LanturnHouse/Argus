@@ -29,42 +29,41 @@ internal sealed class CctvSettingsView : UserControl
         _testResult.SetResourceReference(StyleProperty, "Dim"); _loaded.SetResourceReference(StyleProperty, "Dim"); _data.SetResourceReference(StyleProperty, "Dim");
 
         var root = new StackPanel();
-        root.Children.Add(UiKit.Section("비전 모델은 이렇게 켜지고 꺼집니다",
-            "CCTV 탭에서 '분석 켜기'를 눌러도 모델은 바로 올라가지 않습니다. 읽을 스크린샷이 생겼을 때 올라가고, 대기가 모두 끝난 뒤 아래 유예 시간이 지나면 내려갑니다. " +
-            "Argus 를 켜거나 끌 때는 모델을 올리거나 붙들지 않습니다. 분석을 끄거나 Argus 를 닫으면 올라가 있던 모델도 내립니다.", new Border()));
+        root.Children.Add(UiKit.Section("모델 올리기 · 내리기",
+            "읽을 스크린샷이 있을 때만 모델을 올리고, 대기가 끝나면 아래 유예 시간 뒤에 내립니다. 분석을 끄거나 Argus 를 닫아도 내립니다.", new Border()));
 
         var hostRow = new DockPanel();
         var test = UiKit.Button("연결 확인", async () => await TestAsync()); test.Margin = new Thickness(8, 0, 0, 0);
         DockPanel.SetDock(test, Dock.Right);
         hostRow.Children.Add(test); hostRow.Children.Add(_host);
         var hostBox = new StackPanel(); hostBox.Children.Add(hostRow); hostBox.Children.Add(_testResult);   // 결과가 생기면 위쪽 여백을 준다 (빈 줄이 공간을 차지하지 않게)
-        root.Children.Add(UiKit.Section("Ollama 서버 주소", "비전 모델을 실행하는 Ollama 서버입니다. 이 PC 의 서버만 쓰며 밖으로 나가는 요청은 없습니다. 기본값은 http://127.0.0.1:11434 입니다.", hostBox));
+        root.Children.Add(UiKit.Section("Ollama 서버 주소", "비전 모델을 실행하는 Ollama 서버 주소입니다 (기본 http://127.0.0.1:11434).", hostBox));
 
         var modelRow = new DockPanel();
         var refresh = UiKit.Button("목록 불러오기", async () => await LoadModelsAsync()); refresh.Margin = new Thickness(8, 0, 0, 0);
         DockPanel.SetDock(refresh, Dock.Right); DockPanel.SetDock(_modelPick, Dock.Right);
         _modelPick.Width = 200; _modelPick.MinWidth = 0; _model.MinWidth = 0;
         modelRow.Children.Add(refresh); modelRow.Children.Add(_modelPick); modelRow.Children.Add(_model);
-        root.Children.Add(UiKit.Section("비전 모델", "이미지를 읽을 수 있는(비전) 모델이어야 합니다. 권장: qwen2.5vl:7b (6GB, 그래픽 메모리에 올라가 도킹 숫자는 1초 안에, 오버뷰 한 영역은 행 수에 따라 수 초~수십 초에 읽습니다). 더 큰 모델은 그래픽 메모리를 넘으면 매우 느려집니다.", modelRow));
-        root.Children.Add(UiKit.Section("모델 응답 대기 시간", "모델 호출 하나를 이만큼 기다려도 답이 없으면 그 이미지를 잠시 뒤 다시 시도합니다.", _timeout));
-        root.Children.Add(UiKit.Section("대기가 끝난 뒤 모델을 내리기까지", "읽을 이미지가 모두 끝난 뒤 이 시간 동안 새 이미지가 없으면 모델을 내려 그래픽 메모리를 비웁니다. 0 이면 바로 내립니다. 스크린샷이 몇 초 간격으로 계속 들어오면 올렸다 내렸다 하지 않도록 조금 두는 것이 좋습니다.", _idle));
+        root.Children.Add(UiKit.Section("비전 모델", "이미지를 읽을 수 있는 비전 모델이어야 합니다. 권장: qwen2.5vl:7b (그래픽 메모리 약 6GB). 메모리를 넘는 큰 모델은 매우 느려집니다.", modelRow));
+        root.Children.Add(UiKit.Section("모델 응답 대기 시간", "이만큼 기다려도 답이 없으면 그 이미지를 잠시 뒤 다시 시도합니다.", _timeout));
+        root.Children.Add(UiKit.Section("대기가 끝난 뒤 모델을 내리기까지", "읽을 이미지가 모두 끝난 뒤 이 시간 동안 새 이미지가 없으면 모델을 내립니다. 0 이면 바로 내립니다.", _idle));
 
         var loadedRow = new StackPanel();
         var unload = UiKit.Button("지금 모델 내리기", async () => { await _svc.Vision.UnloadModelAsync(_svc.Settings.Vision); await Task.Delay(500); await RefreshLoadedAsync(); });
         loadedRow.Children.Add(_loaded); unload.Margin = new Thickness(0, 6, 0, 0); unload.HorizontalAlignment = HorizontalAlignment.Left; loadedRow.Children.Add(unload);
-        root.Children.Add(UiKit.Section("지금 올라가 있는 모델", "Ollama 가 지금 그래픽 메모리에 올려 둔 모델입니다 (다른 프로그램이 올린 것도 보입니다).", loadedRow));
+        root.Children.Add(UiKit.Section("지금 올라가 있는 모델", "Ollama 가 그래픽 메모리에 올려 둔 모델입니다.", loadedRow));
 
         var folderRow = new DockPanel();
         var btns = new StackPanel { Orientation = Orientation.Horizontal }; DockPanel.SetDock(btns, Dock.Right);
         btns.Children.Add(UiKit.Button("변경", PickFolder)); btns.Children.Add(UiKit.Button("자동", () => { _svc.Settings.ImageFolder = ""; Save(); Load(); })); btns.Children.Add(UiKit.Button("열기", () => { if (Directory.Exists(_svc.ImageFolder)) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{_svc.ImageFolder}\"") { UseShellExecute = true }); }));
         ((Button)btns.Children[0]).Margin = new Thickness(8, 0, 0, 0);
         folderRow.Children.Add(btns); folderRow.Children.Add(_folder);
-        root.Children.Add(UiKit.Section("분석할 스크린샷 폴더", "'자동'이면 화면 감시 캡처가 CCTV 스크린샷을 저장하는 폴더를 씁니다. 파일 이름이 CCTV{날짜시각}_{캐릭터}.png 인 것만 분석합니다.", folderRow));
+        root.Children.Add(UiKit.Section("분석할 스크린샷 폴더", "'자동'이면 화면 감시 캡처의 저장 폴더를 씁니다. CCTV{날짜시각}_{캐릭터}.png 파일만 분석합니다.", folderRow));
 
         var dataBox = new StackPanel();
         dataBox.Children.Add(_data);
         var reset = UiKit.Button("분석 기록 초기화", ResetData, "DangerButton"); reset.Margin = new Thickness(0, 8, 0, 0); reset.HorizontalAlignment = HorizontalAlignment.Left; dataBox.Children.Add(reset);
-        root.Children.Add(UiKit.Section("분석 기록", "이벤트, 현재 대상, 시그니처와 이미지 목록을 지우고 폴더의 이미지를 처음부터 다시 분석하게 합니다. 폴더의 원본 PNG 는 삭제하지 않습니다.", dataBox));
+        root.Children.Add(UiKit.Section("분석 기록", "이벤트와 이미지 목록을 지우고 처음부터 다시 분석합니다. 원본 PNG 는 지우지 않습니다.", dataBox));
 
         Content = root;
         Loaded += async (_, _) => { Load(); _timer.Start(); await RefreshLoadedAsync(); await LoadModelsAsync(quiet: true); };

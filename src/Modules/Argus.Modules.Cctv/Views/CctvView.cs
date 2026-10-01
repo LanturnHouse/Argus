@@ -38,7 +38,7 @@ internal sealed class CctvView : UserControl
         _svc = svc;
         var root = new StackPanel();
         root.Children.Add(UiKit.Text("CCTV", 24, FontWeights.Bold));
-        root.Children.Add(UiKit.Dim("EVE 스크린샷(화면 감시 캡처가 저장한 CCTV 파일)의 오버뷰 · 프로빙 창 · 도킹 숫자를 비전 모델로 읽어 함선의 출입과 도킹, 시그니처 변화를 판정합니다.", 12, new Thickness(0, 4, 0, 16)));
+        root.Children.Add(UiKit.Dim("스크린샷의 오버뷰 · 프로빙 창 · 도킹 숫자를 비전 모델로 읽어 출입 · 도킹 · 시그니처 변화를 판정합니다.", 12, new Thickness(0, 4, 0, 16)));
         root.Children.Add(_analysisHost);
         root.Children.Add(_warningHost);
         root.Children.Add(_statsHost);
@@ -144,7 +144,7 @@ internal sealed class CctvView : UserControl
         body.Children.Add(top);
         if (!string.IsNullOrEmpty(s.Message)) body.Children.Add(UiKit.Text(s.Message!, 12, FontWeights.Normal, s.IsError ? UiKit.Bad : UiKit.Warn, new Thickness(0, 10, 0, 0), wrap: true));
         else if (s.State == AnalysisState.Off)
-            body.Children.Add(UiKit.Dim("분석을 켜면 읽을 이미지가 있을 때만 비전 모델을 올리고, 모두 읽으면 내립니다. Argus 를 켠다고 모델이 저절로 올라가지는 않습니다.", 12, new Thickness(0, 10, 0, 0)));
+            body.Children.Add(UiKit.Dim("분석이 꺼져 있습니다. 켜면 읽을 이미지가 있을 때만 모델을 올립니다.", 12, new Thickness(0, 10, 0, 0)));
         else if (s.State == AnalysisState.Working && s.Processing != null)
             body.Children.Add(UiKit.Dim($"읽는 중: {s.Processing}", 12, new Thickness(0, 10, 0, 0)));
 
@@ -153,7 +153,7 @@ internal sealed class CctvView : UserControl
         open.Margin = new Thickness(8, 0, 0, 0); open.Padding = new Thickness(10, 3, 10, 3);
         DockPanel.SetDock(open, Dock.Right);
         folder.Children.Add(open);
-        folder.Children.Add(UiKit.Dim($"이미지 폴더: {s.Folder} · 감시 중인 캐릭터의 이미지 {s.ImageCount:N0}장" + (s.ModelCalls + s.ReusedCalls > 0 ? $" · 모델 호출 {s.ModelCalls:N0}회(변화 없는 화면 {s.ReusedCalls:N0}회는 재사용)" : ""), 12, null, true));
+        folder.Children.Add(UiKit.Dim($"이미지 폴더: {s.Folder} · 이미지 {s.ImageCount:N0}장" + (s.ModelCalls + s.ReusedCalls > 0 ? $" · 모델 호출 {s.ModelCalls:N0}회 (재사용 {s.ReusedCalls:N0}회)" : ""), 12, null, true));
         body.Children.Add(folder);
         return UiKit.Card(body);
     }
@@ -192,8 +192,8 @@ internal sealed class CctvView : UserControl
         int Count(LiveStatus st) => d.Latest.Values.Count(x => x.Status == st);
         var grid = new UniformGrid { Rows = 1, Columns = 3 };
         grid.Children.Add(StatCard("현재 도킹 확인", Count(LiveStatus.Docked), d.DockPeaks.Count > 0 ? (d.DockPeaks.Count > 1 ? $"최고 도킹 수 합계 {d.DockPeaks.Sum(p => p.PeakCount)}명 · 눈깔 {d.DockPeaks.Count}개" : $"최고 도킹 수 {d.DockPeaks[0].PeakCount}명") : "도킹 수 감지 대기", "도킹", d, LiveStatus.Docked, 0));
-        grid.Children.Add(StatCard("감지 · 미도킹", Count(LiveStatus.Observed), "현재 위치 미확정", "감지", d, LiveStatus.Observed, 1));
-        grid.Children.Add(StatCard("성계 이탈", Count(LiveStatus.Departed), "점프아웃 판정 (워프아웃 제외)", "이탈", d, LiveStatus.Departed, 2));
+        grid.Children.Add(StatCard("감지 · 미도킹", Count(LiveStatus.Observed), "위치 미확정", "감지", d, LiveStatus.Observed, 1));
+        grid.Children.Add(StatCard("성계 이탈", Count(LiveStatus.Departed), "점프아웃 판정", "이탈", d, LiveStatus.Departed, 2));
         return grid;
     }
 
@@ -222,13 +222,12 @@ internal sealed class CctvView : UserControl
         head.Children.Add(add);
         var titleBox = new StackPanel();
         titleBox.Children.Add(UiKit.SectionHead("감시 눈깔"));
-        titleBox.Children.Add(UiKit.Dim("캐릭터 하나가 보는 화면에서 오버뷰 · 프로빙 창 · 도킹 숫자 영역을 지정한 감시 단위입니다.", 12));
         head.Children.Add(titleBox);
         box.Children.Add(head);
 
         if (d.Watchers.Count == 0)
         {
-            box.Children.Add(UiKit.Dim("아직 등록한 눈깔이 없습니다. '눈깔 추가'로 캐릭터와 인식 영역을 지정하면 그 캐릭터의 스크린샷을 분석합니다.", 12, new Thickness(0, 12, 0, 0)));
+            box.Children.Add(UiKit.Dim("등록한 눈깔이 없습니다. '눈깔 추가'로 캐릭터와 인식 영역을 지정하세요.", 12, new Thickness(0, 12, 0, 0)));
             return UiKit.Card(box);
         }
 
@@ -274,7 +273,7 @@ internal sealed class CctvView : UserControl
     {
         var box = new StackPanel();
         box.Children.Add(UiKit.SectionHead("감지 타임라인"));
-        box.Children.Add(UiKit.Dim("줄을 누르면 판정 근거(원본 이미지, 이전 프레임, 인식 영역)를 볼 수 있습니다.", 12));
+        box.Children.Add(UiKit.Dim("줄을 누르면 판정 근거를 볼 수 있습니다.", 12));
 
         // 한 줄: 검색창 · 정확히 일치 · (눈깔이 둘 이상이면) 눈깔 선택
         var bar = new DockPanel { Margin = new Thickness(0, 10, 0, 8) };
@@ -417,10 +416,9 @@ internal sealed class CctvView : UserControl
     {
         var box = new StackPanel();
         box.Children.Add(UiKit.SectionHead("코퍼레이션별 전력 현황"));
-        box.Children.Add(UiKit.Dim("도킹 확인과 감지 · 미도킹 대상 집계", 12));
         if (d.Corps.Count == 0)
         {
-            box.Children.Add(UiKit.Dim("오버뷰에서 콥 티커가 읽히면 이곳에 자동으로 집계됩니다.", 12, new Thickness(0, 14, 0, 4)));
+            box.Children.Add(UiKit.Dim("아직 집계된 콥이 없습니다.", 12, new Thickness(0, 14, 0, 4)));
             return UiKit.Card(box);
         }
         var list = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };

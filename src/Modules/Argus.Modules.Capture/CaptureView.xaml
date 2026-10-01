@@ -12,7 +12,6 @@
         <DockPanel>
             <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
                 <TextBlock Text="화면 감시" FontSize="24" FontWeight="Bold"/>
-                <TextBlock Text="클라이언트별로 독립 감시" Style="{DynamicResource Dim}" Margin="0,4,0,0"/>
             </StackPanel>
             <ListBox x:Name="ClientList" SelectionChanged="ClientList_SelectionChanged">
                 <ListBox.ItemTemplate>
@@ -48,7 +47,7 @@
             </ListBox>
         </DockPanel>
 
-        <TextBlock x:Name="NoClient" Grid.Column="2" Text="감시할 클라이언트가 없습니다. EVE에 로그인하면 자동으로 나타납니다."
+        <TextBlock x:Name="NoClient" Grid.Column="2" Text="감시할 클라이언트가 없습니다."
                    Style="{DynamicResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
         <!-- 상세 -->

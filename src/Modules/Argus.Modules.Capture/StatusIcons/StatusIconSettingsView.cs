@@ -37,17 +37,16 @@ internal sealed class StatusIconSettingsView : UserControl
         _probeText.SetResourceReference(StyleProperty, "Dim");
 
         var root = new StackPanel();
-        root.Children.Add(Section("상태이상 인식", "EVE 화면 아래 가운데에 뜨는 상태이상 아이콘을 읽어 스크램블·디스럽터·HIC 포인팅을 판정합니다. 전투 로그는 태클이 걸린 순간 한 줄만 남기지만, 아이콘은 걸려 있는 동안 계속 떠 있어서 유지와 풀림을 바로 알 수 있습니다. " +
-            "이 기능이 프리뷰 태클 리본의 유일한 출처입니다 (전투 로그에서는 태클을 읽지 않습니다). 끄거나, 창을 최소화해서 읽지 못하는 동안에는 리본이 나오지 않습니다.", _enabled));
+        root.Children.Add(Section("상태이상 인식", "EVE 화면 아래 가운데의 상태이상 아이콘을 읽어 스크램블·디스럽터·HIC 포인팅을 판정합니다. 프리뷰 태클 리본은 이 기능으로만 나옵니다.", _enabled));
 
         var shapeRow = new DockPanel();
         DockPanel.SetDock(_shapeText, Dock.Right);
         shapeRow.Children.Add(_shapeText); shapeRow.Children.Add(_shape);
-        root.Children.Add(Section("모양 판정 기준", "찾은 원형 아이콘의 모양이 태클 아이콘과 이 정도 이상 닮아야 태클로 봅니다. 노스·ECM·웹·센서 댐프너 아이콘은 45% 아래, 태클 세 종류는 77% 이상이었습니다. 너무 낮추면 다른 상태이상을 태클로 오인하고, 너무 높이면 태클을 놓칩니다.", shapeRow));
+        root.Children.Add(Section("모양 판정 기준", "아이콘 모양이 태클과 이 정도 이상 닮아야 태클로 봅니다. 낮추면 다른 상태이상을 오인하고, 높이면 태클을 놓칩니다.", shapeRow));
 
         root.Children.Add(Section("읽는 횟수", "1초에 이만큼 화면을 읽습니다. 많을수록 빨리 반응하지만 조금 더 무겁습니다.", _hz));
         root.Children.Add(Section("켜짐 판정", "아이콘이 이만큼 연속으로 보여야 리본을 켭니다. 순간적인 오인식을 막습니다.", _on));
-        root.Children.Add(Section("꺼짐 판정", "아이콘이 이만큼 연속으로 안 보여야 리본을 끕니다. 아이콘이 깜빡이거나 잠깐 가려져도 리본이 흔들리지 않게 합니다.", _off));
+        root.Children.Add(Section("꺼짐 판정", "아이콘이 이만큼 연속으로 안 보여야 리본을 끕니다. 깜빡여도 리본이 흔들리지 않게 합니다.", _off));
 
         root.Children.Add(Section("읽는 영역: 화면 아래에서", "읽는 영역의 아래쪽 끝이 클라이언트 화면 아래에서 몇 px 위인지입니다. 아이콘 줄은 HUD 바로 위에 뜹니다.", _bottom));
         root.Children.Add(Section("읽는 영역: 높이", "읽는 영역의 세로 길이입니다. 아이콘 줄이 이 안에 들어와야 합니다.", _height));
@@ -56,7 +55,7 @@ internal sealed class StatusIconSettingsView : UserControl
         radius.Children.Add(_minR);
         radius.Children.Add(new TextBlock { Text = "  ~  ", VerticalAlignment = VerticalAlignment.Center });
         radius.Children.Add(_maxR);
-        root.Children.Add(Section("찾는 아이콘 크기(반지름)", "EVE 의 UI 배율에 따라 아이콘 크기가 달라집니다. 배율 100%에서 반지름이 약 17px 입니다. 아이콘이 잡히지 않으면 범위를 넓혀 보세요.", radius));
+        root.Children.Add(Section("찾는 아이콘 크기(반지름)", "UI 배율에 따라 달라집니다 (100%에서 약 17px). 아이콘이 안 잡히면 범위를 넓혀 보세요.", radius));
 
         // ---- 지금 읽히는 모습 ----
         var view = new Viewbox { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, MaxHeight = 200, HorizontalAlignment = HorizontalAlignment.Left };
@@ -67,7 +66,7 @@ internal sealed class StatusIconSettingsView : UserControl
         var probe = new StackPanel();
         _client.Margin = new Thickness(0, 8, 0, 0);
         probe.Children.Add(_client); probe.Children.Add(frameBox); probe.Children.Add(_probeText);
-        root.Children.Add(Section("지금 읽히는 모습", "선택한 클라이언트에서 읽는 영역과 찾아낸 아이콘입니다. 초록 원은 태클(디스럽터·스크램블·HIC 포인팅)로 판정한 것, 회색 원은 다른 상태이상으로 본 것입니다. 원이 안 그려지면 영역이나 아이콘 크기를 조정하세요.", probe));
+        root.Children.Add(Section("지금 읽히는 모습", "초록 원은 태클로 판정한 아이콘, 회색 원은 다른 상태이상입니다.", probe));
 
         Content = root;
         Loaded += (_, _) => { Load(); _refresh.Start(); Refresh(); };

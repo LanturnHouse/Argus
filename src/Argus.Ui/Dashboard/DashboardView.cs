@@ -39,7 +39,7 @@ public sealed class DashboardView : UserControl
     private readonly IReadOnlyList<IDashboardContributor> _contributors;
     private readonly WrapPanel _summary = new();
     private readonly Border _tableHost = new() { Margin = new Thickness(0, 0, 0, 12) };
-    private readonly TextBlock _empty = new() { Text = "탐지된 클라이언트가 없습니다. EVE에 로그인하면 자동으로 나타납니다.", Margin = new Thickness(2, 6, 0, 0), Visibility = Visibility.Collapsed };
+    private readonly TextBlock _empty = new() { Text = "실행 중인 EVE 클라이언트가 없습니다.", Margin = new Thickness(2, 6, 0, 0), Visibility = Visibility.Collapsed };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private string _signature = "\0";
 
@@ -49,7 +49,7 @@ public sealed class DashboardView : UserControl
         _contributors = [.. contributors];
 
         var title = new TextBlock { Text = "대시보드", FontSize = 24, FontWeight = FontWeights.Bold };
-        var sub = new TextBlock { Text = "실행 중인 EVE 클라이언트와 각 기능의 현재 상태 (창 제목 \"EVE - 캐릭터명\" 기준으로 자동 탐지)", Margin = new Thickness(0, 4, 0, 16) };
+        var sub = new TextBlock { Text = "실행 중인 EVE 클라이언트와 각 기능의 현재 상태", Margin = new Thickness(0, 4, 0, 16) };
         sub.SetResourceReference(StyleProperty, "Dim");
         _empty.SetResourceReference(StyleProperty, "Dim");
 

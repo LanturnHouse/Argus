@@ -135,7 +135,7 @@ internal static class SummaryWindow
         {
             LiveStatus.Docked => ("현재 도킹 확인", "도킹 카운터와 이탈 인원이 일치"),
             LiveStatus.Observed => ("감지 · 미도킹", "현재 위치를 확정하지 못한 대상"),
-            _ => ("성계 이탈", "웜홀·게이트 점프아웃 판정 (워프아웃은 같은 성계 안의 이동이라 제외)"),
+            _ => ("성계 이탈", "웜홀·게이트 점프아웃 판정"),
         };
         var box = new StackPanel { Margin = new Thickness(20) };
         box.Children.Add(UiKit.Text($"{title} 상세", 18, FontWeights.Bold));
@@ -144,7 +144,7 @@ internal static class SummaryWindow
         if (status == LiveStatus.Docked)
         {
             box.Children.Add(UiKit.Text("감지된 최고 도킹 수", 13, FontWeights.SemiBold));
-            box.Children.Add(UiKit.Dim("스트럭쳐 감시 위치별 최고 기록이며, 위치가 여러 곳이면 합산해 보여 줍니다.", 12, new Thickness(0, 2, 0, 8)));
+            box.Children.Add(UiKit.Dim("스트럭쳐 감시 위치별 최고 기록 (여러 곳이면 합산)", 12, new Thickness(0, 2, 0, 8)));
             if (peaks.Count == 0) box.Children.Add(UiKit.Dim("아직 도킹 숫자를 읽은 이미지가 없습니다.", 12, new Thickness(0, 0, 0, 14)));
             if (peaks.Count > 1)
             {
@@ -211,7 +211,6 @@ internal static class CorpWindow
 
         var members = new StackPanel();
         members.Children.Add(UiKit.Text("캐릭터별 감지 함선", 14, FontWeights.SemiBold));
-        members.Children.Add(UiKit.Dim("동일 캐릭터·동일 함선의 반복 감지는 한 번만 표시합니다.", 12, new Thickness(0, 2, 0, 10)));
         foreach (var m in corp.Members)
         {
             members.Children.Add(UiKit.Text(m.Name, 13.5, FontWeights.SemiBold, null, new Thickness(0, 6, 0, 2)));

@@ -136,7 +136,7 @@ public partial class PreviewView : UserControl
 
         PresetBox.Children.Clear();
         var title = new TextBlock { Text = $"프리셋 '{p.Name}' 설정" }; title.SetResourceReference(StyleProperty, "CardTitle");
-        var desc = new TextBlock { Text = "이 프리셋을 쓰는 동안 적용되는 단축키입니다. 프리셋을 바꾸면 그 프리셋의 단축키로 바뀝니다.", Margin = new Thickness(0, 2, 0, 10) };
+        var desc = new TextBlock { Text = "이 프리셋에 적용되는 단축키입니다.", Margin = new Thickness(0, 2, 0, 10) };
         desc.SetResourceReference(StyleProperty, "Dim");
         PresetBox.Children.Add(title);
         PresetBox.Children.Add(desc);
@@ -144,7 +144,7 @@ public partial class PreviewView : UserControl
         foreach (var w in warnings) PresetBox.Children.Add(WarningBox(w.Message));
         PresetBox.Children.Add(CycleRow("사이클 다음 클라이언트", "next", p.CycleNext, t => _svc.SetCycleHotkey(true, t)));
         PresetBox.Children.Add(CycleRow("사이클 이전 클라이언트", "prev", p.CyclePrev, t => _svc.SetCycleHotkey(false, t)));
-        PresetBox.Children.Add(CycleRow("레드박싱이 난 클라이언트로 전환", "surge", p.SurgeHotkey, t => _svc.SetSurgeHotkey(t), $"레드박싱 후 {_svc.Settings.SurgeSeconds}초 동안만 동작합니다."));
+        PresetBox.Children.Add(CycleRow("레드박싱이 난 클라이언트로 전환", "surge", p.SurgeHotkey, t => _svc.SetSurgeHotkey(t), $"레드박싱 후 {_svc.Settings.SurgeSeconds}초 동안"));
     }
 
     private UIElement CycleRow(string label, string key, HotkeyTrigger? trigger, Action<HotkeyTrigger?> set, string? note = null)

@@ -18,7 +18,7 @@ internal sealed class ProfilesSettingsView : UserControl
         var title = new TextBlock { Text = "EVE 설정 폴더", FontWeight = FontWeights.SemiBold };
         var desc = new TextBlock
         {
-            Text = "설정파일을 가져오고 프리셋을 적용할 EVE 설정 폴더(settings_...)입니다. 보통 자동으로 찾은 Tranquility 폴더를 그대로 쓰면 됩니다.",
+            Text = "설정파일을 가져오고 프리셋을 적용할 EVE 설정 폴더입니다. 보통 자동으로 찾은 폴더를 그대로 씁니다.",
             Margin = new Thickness(0, 2, 0, 0),
         };
         desc.SetResourceReference(FrameworkElement.StyleProperty, "Dim");

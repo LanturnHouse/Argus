@@ -21,7 +21,7 @@ public partial class ProfilesView : UserControl
         _apply = new ApplyTab(svc);
 
         TabTemplates.IsChecked = true;
-        Show(_templates, "EVE 설정 폴더의 캐릭터 설정을 Argus 안에 저장해 둡니다. 저장한 뒤에는 EVE 폴더의 원본이 바뀌어도 영향이 없습니다.");
+        Show(_templates, "EVE 설정 폴더의 캐릭터 설정을 Argus 안에 저장해 둡니다.");
         Loaded += async (_, _) =>
         {
             // 생성자에서 켠 탭 표시가 화면에 붙는 과정에서 풀리는 일이 있어, 화면이 뜬 뒤 아무 탭도 켜져 있지 않으면 다시 켠다.
@@ -33,8 +33,8 @@ public partial class ProfilesView : UserControl
     private void Tab_Click(object sender, RoutedEventArgs e)
     {
         if (TabTemplates.IsChecked == true) Show(_templates, "EVE 설정 폴더의 캐릭터 설정을 Argus 안에 저장해 둡니다. 저장한 뒤에는 EVE 폴더의 원본이 바뀌어도 영향이 없습니다.");
-        else if (TabPresets.IsChecked == true) Show(_presets, "어떤 캐릭터에 어떤 설정파일을 적용할지 묶어서 프리셋으로 저장합니다.");
-        else Show(_apply, "프리셋을 고르고 적용하면 EVE 설정 폴더의 캐릭터 파일을 덮어씁니다. 실행 중인 캐릭터는 건너뜁니다.");
+        else if (TabPresets.IsChecked == true) Show(_presets, "캐릭터별로 적용할 설정파일을 묶어 프리셋으로 저장합니다.");
+        else Show(_apply, "프리셋을 적용하면 EVE 설정 폴더의 캐릭터 파일을 덮어씁니다. 실행 중인 캐릭터는 건너뜁니다.");
     }
 
     private void Show(UserControl tab, string subtitle)

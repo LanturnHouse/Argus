@@ -40,7 +40,7 @@ public sealed class SettingsPage : UserControl
         var stack = new StackPanel { MaxWidth = 860, HorizontalAlignment = HorizontalAlignment.Left };
 
         var title = new TextBlock { Text = "설정", FontSize = 24, FontWeight = FontWeights.Bold };
-        var sub = new TextBlock { Text = "기능별로 나뉘어 있습니다. 클라이언트별 설정은 해당 기능 화면에서 바꿉니다.", Margin = new Thickness(0, 4, 0, 16) };
+        var sub = new TextBlock { Text = "기능별 설정", Margin = new Thickness(0, 4, 0, 16) };
         sub.SetResourceReference(FrameworkElement.StyleProperty, "Dim");
         stack.Children.Add(title);
         stack.Children.Add(sub);

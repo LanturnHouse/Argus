@@ -36,29 +36,28 @@ internal sealed class PreviewSettingsView : UserControl
         foreach (var (label, w) in Sizes) _size.Items.Add(new ComboBoxItem { Content = label, Tag = w });
 
         var root = new StackPanel();
-        root.Children.Add(Section("표시 조건", "EVE 클라이언트가 맨 앞에 있을 때만 프리뷰를 보여주고, 브라우저 등 다른 창이 위에 있으면 숨깁니다. Argus 창은 예외라서, Argus 를 쓰는 동안에는 프리뷰가 보입니다.", _onlyEve));
-        root.Children.Add(Section("기본 프리뷰 크기", "새로 나타나는 클라이언트의 프리뷰 가로 크기입니다. 세로는 클라이언트 화면 비율로 정해집니다.", _size));
+        root.Children.Add(Section("표시 조건", "EVE 가 맨 앞에 있을 때만 프리뷰를 보여줍니다. Argus 창이 앞에 있을 때도 보입니다.", _onlyEve));
+        root.Children.Add(Section("기본 프리뷰 크기", "새 클라이언트의 프리뷰 가로 크기입니다. 세로는 화면 비율로 정해집니다.", _size));
 
         var opacityRow = new DockPanel();
         DockPanel.SetDock(_opacityText, Dock.Right);
         opacityRow.Children.Add(_opacityText); opacityRow.Children.Add(_opacity);
-        root.Children.Add(Section("불투명도", "프리뷰를 반투명하게 하면 뒤의 창이 비쳐 보입니다.", opacityRow));
+        root.Children.Add(Section("불투명도", "낮추면 뒤의 창이 비쳐 보입니다.", opacityRow));
 
-        root.Children.Add(Section("HUD 수치 바 투명도", "프리뷰 아래쪽의 받는 DPS · 받는 LOGI · 받는 뉴트 표시의 투명도입니다.", Row(_barOpacity, _barOpacityText)));
-        root.Children.Add(Section("HUD 태클 리본 투명도", "프리뷰 오른쪽 위의 HIC · SCRAM · DISRUPT 리본의 투명도입니다.", Row(_ribbonOpacity, _ribbonOpacityText)));
+        root.Children.Add(Section("HUD 수치 바 투명도", "받는 DPS · LOGI · 뉴트 표시", Row(_barOpacity, _barOpacityText)));
+        root.Children.Add(Section("HUD 태클 리본 투명도", "HIC · SCRAM · DISRUPT 리본", Row(_ribbonOpacity, _ribbonOpacityText)));
 
-        root.Children.Add(Section("활성 클라이언트", "지금 사용 중인 클라이언트는 화면에 직접 보이므로 그 프리뷰를 감출 수 있습니다.", _hideActive));
+        root.Children.Add(Section("활성 클라이언트", "사용 중인 클라이언트의 프리뷰는 숨길 수 있습니다.", _hideActive));
 
-        root.Children.Add(Section("레드박싱: 유지 시간", "레드박싱이 감지된 뒤 이 시간 동안 프리뷰에 붉은 색조가 깜빡이고 전환 키 안내가 보이며, 레드박싱이 난 클라이언트로 전환하는 단축키가 동작합니다. 그 키는 평소에는 꺼져 있어서 다른 곳에 그대로 전달됩니다. 레드박싱이 여러 곳이면 먼저 감지된 클라이언트부터 가고, 전환하면 그 레드박싱은 시간이 남았어도 끝납니다. (레드박싱 판정 기준은 설정 > 프리뷰 > 전투 로그에 있습니다.)", _surge));
-        root.Children.Add(Section("레드박싱: 깜빡임 주기", "붉은 색조가 한 번 깜빡이는 주기입니다. 짧을수록 빠르게 깜빡입니다.", _surgeFlash));
-        root.Children.Add(Section("레드박싱: 전환 키 안내", "레드박싱이 난 프리뷰 가운데에 어떤 키로 그 클라이언트로 갈 수 있는지 표시합니다.", _surgeHint));
+        root.Children.Add(Section("레드박싱: 유지 시간", "레드박싱 후 이 시간 동안 붉은 색조와 전환 키 안내가 보이고, 레드박싱 난 클라이언트로 전환하는 단축키가 동작합니다. 여러 곳이면 먼저 감지된 쪽부터 갑니다.", _surge));
+        root.Children.Add(Section("레드박싱: 깜빡임 주기", "짧을수록 빠르게 깜빡입니다.", _surgeFlash));
+        root.Children.Add(Section("레드박싱: 전환 키 안내", "레드박싱 난 프리뷰 가운데에 전환 키를 표시합니다.", _surgeHint));
 
         var hkBox = new StackPanel();
         _hkOnlyEve.Margin = new Thickness(0, 8, 0, 0);
         _hkExtraMods.Margin = new Thickness(0, 8, 0, 0);
         hkBox.Children.Add(_hkEnabled); hkBox.Children.Add(_hkOnlyEve); hkBox.Children.Add(_hkExtraMods);
-        root.Children.Add(Section("단축키 동작 범위", "범위 제한을 켜 두면 브라우저 등 다른 프로그램에서는 단축키가 그대로 그 프로그램에 전달됩니다. (예: 마우스 옆 버튼의 '뒤로 가기') " +
-            "보조키 옵션이 켜져 있으면 지정한 키에 Ctrl 등이 더 눌려 있어도 동작해서, Ctrl 을 누른 채 락온하면서 클라이언트를 계속 전환할 수 있습니다. 단축키 지정은 프리뷰 화면에서 프리셋별로 합니다.", hkBox));
+        root.Children.Add(Section("단축키 동작 범위", "범위 제한을 켜면 다른 프로그램에서는 단축키가 그대로 전달됩니다. 보조키 옵션을 켜면 Ctrl 등을 누른 채로도 동작합니다. 단축키는 프리뷰 화면에서 프리셋별로 지정합니다.", hkBox));
 
         Content = root;
         Loaded += (_, _) => Load();

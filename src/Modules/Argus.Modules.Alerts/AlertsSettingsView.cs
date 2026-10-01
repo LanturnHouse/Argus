@@ -12,7 +12,7 @@ internal sealed class AlertsSettingsView : UserControl
         var title = new TextBlock { Text = "알림음", FontWeight = FontWeights.SemiBold };
         var desc = new TextBlock
         {
-            Text = "변화가 감지되면 재생됩니다. 비워두면 시스템 경고음을 사용합니다. (알림음 사용 여부는 화면 감시에서 클라이언트별로 켜고 끕니다.)",
+            Text = "변화가 감지되면 재생됩니다. 비워두면 시스템 경고음을 씁니다.",
             Margin = new Thickness(0, 2, 0, 0),
         };
         desc.SetResourceReference(FrameworkElement.StyleProperty, "Dim");

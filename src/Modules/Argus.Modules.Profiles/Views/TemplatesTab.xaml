@@ -17,7 +17,7 @@
                         <Button DockPanel.Dock="Right" Content="새로고침" Margin="8,0,0,0" Padding="12,6" Click="Refresh_Click"/>
                         <TextBlock x:Name="FolderLabel" Style="{DynamicResource Dim}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
                     </DockPanel>
-                    <TextBlock x:Name="FolderNote" Style="{DynamicResource Dim}" Margin="0,4,0,0" Text="폴더는 설정 페이지에서 변경합니다."/>
+                    <TextBlock x:Name="FolderNote" Style="{DynamicResource Dim}" Margin="0,4,0,0" Visibility="Collapsed"/>
                 </StackPanel>
                 <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0">
                     <Grid>

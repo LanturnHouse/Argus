@@ -158,7 +158,7 @@ internal sealed class WatcherWizard
         var root = new DockPanel { Margin = new Thickness(22, 18, 22, 18) };
         var head = new StackPanel();
         head.Children.Add(UiKit.Text(editing == null ? "감시 눈깔 등록" : "감시 눈깔 수정", 18, FontWeights.Bold));
-        head.Children.Add(UiKit.Dim("캐릭터가 보는 화면에서 오버뷰 · 프로빙 창 · 도킹 숫자 영역을 지정합니다.", 12, new Thickness(0, 2, 0, 14)));
+        head.Children.Add(new Border { Height = 12 });
         head.Children.Add(top);
         head.Children.Add(regionHead);
         DockPanel.SetDock(head, Dock.Top);
@@ -203,8 +203,8 @@ internal sealed class WatcherWizard
         var latest = _known.FirstOrDefault(k => k.Name == name).Latest;
         _editor.SetImage(id is { } i ? DialogKit.LoadImage(_svc.Store.ImagePath(i)) : null);
         _help.Text = id != null
-            ? $"{name} 의 가장 최근 스크린샷을 사용합니다{(latest?.Length >= 19 ? $" ({latest.Substring(11, 8)})" : "")}. 영역 종류를 고른 뒤 스크린샷 위를 마우스로 끌어 그립니다. 화면 감시 캡처가 '선택 영역'만 저장한 것이면 그 범위 안에서 지정합니다."
-            : _known.Count == 0 ? "스크린샷이 있는 캐릭터가 없습니다. 화면 감시 캡처가 CCTV 스크린샷을 저장하면 그 캐릭터가 여기에 나타납니다."
+            ? $"{name} 의 가장 최근 스크린샷을 사용합니다{(latest?.Length >= 19 ? $" ({latest.Substring(11, 8)})" : "")}. 영역 종류를 고른 뒤 스크린샷 위를 끌어 그립니다."
+            : _known.Count == 0 ? "스크린샷이 있는 캐릭터가 없습니다."
             : "이 캐릭터의 스크린샷을 폴더에서 찾을 수 없어 영역을 그릴 수 없습니다.";
     }
 
@@ -213,7 +213,7 @@ internal sealed class WatcherWizard
         _error.Text = "";
         if (CurrentCharacter.Length == 0) { _error.Text = "캐릭터를 선택해주세요."; return; }
         if (string.IsNullOrWhiteSpace(_label.Text)) { _error.Text = "감지 이름을 입력해주세요."; return; }
-        if (_editor.Regions.Count == 0) { _error.Text = "인식 영역을 하나 이상 지정해주세요. 스크린샷 위에서 마우스로 끌어 영역을 그립니다."; return; }
+        if (_editor.Regions.Count == 0) { _error.Text = "인식 영역을 하나 이상 지정해주세요."; return; }
         var id = _editing?.Id ?? $"watcher-{DateTimeOffset.Now.ToUnixTimeMilliseconds()}";
         _svc.SaveWatcher(new Watcher(id, _label.Text.Trim(), CurrentCharacter, _type, true, 2, [.. _editor.Regions]));
         _window.Close();

@@ -13,7 +13,7 @@ internal sealed class CaptureSettingsView : UserControl
         var title = new TextBlock { Text = "스크린샷 저장 폴더", FontWeight = FontWeights.SemiBold };
         var desc = new TextBlock
         {
-            Text = "변화가 감지되면 CCTV{시각}_{캐릭터}.png 이름으로 이 폴더에 저장됩니다. CCTV 탭이 분석하는 폴더와 같은 곳입니다 (CCTV 설정에서 다른 폴더를 지정하지 않았다면).",
+            Text = "변화가 감지되면 CCTV{시각}_{캐릭터}.png 로 이 폴더에 저장되고, CCTV 탭이 이 폴더를 분석합니다.",
             Margin = new Thickness(0, 2, 0, 0),
         };
         desc.SetResourceReference(FrameworkElement.StyleProperty, "Dim");
