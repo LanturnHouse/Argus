@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <Resource Include="Argus.ico" />
+    <Resource Include="Assets\ArgusLogo.png" />
   </ItemGroup>
 
 </Project>

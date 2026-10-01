@@ -14,7 +14,7 @@
             <DockPanel Margin="14,18,14,14">
                 <StackPanel DockPanel.Dock="Top" Margin="6,0,0,22">
                     <StackPanel Orientation="Horizontal">
-                        <Image Source="Argus.ico" Width="30" Height="30" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <Image Source="Assets/ArgusLogo.png" Width="30" Height="30" RenderOptions.BitmapScalingMode="HighQuality"/>
                         <TextBlock Text="ARGUS" FontSize="18" FontWeight="Bold" Margin="10,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </StackPanel>
