@@ -44,6 +44,7 @@ internal sealed class ClientMonitor(
     {
         var lastAlert = DateTime.MinValue;
         var pending = false; // 쿨다운 때문에 저장하지 못한 변화가 있는가
+        var startShot = false; // 감시를 시작하고 처음 읽은 화면을 한 장 저장했는가
 
         while (!ct.IsCancellationRequested)
         {
@@ -52,7 +53,11 @@ internal sealed class ClientMonitor(
                 var session = getSession();
                 if (session == null) Status = "캡처 세션 없음";
                 else if (session.IsMinimized) Status = "창이 최소화됨 (캡처 불가)";
-                else if (session.Grab() is { } frame) Tick(frame, ref lastAlert, ref pending);
+                else if (session.Grab() is { } frame)
+                {
+                    if (!startShot) { startShot = true; SaveStartShot(frame); }
+                    Tick(frame, ref lastAlert, ref pending);
+                }
                 else Status = "프레임 대기 중";
             }
             catch (Exception ex) { Status = "오류: " + ex.Message; }
@@ -87,6 +92,25 @@ internal sealed class ClientMonitor(
         }
         Status = $"변화 감지: {now:HH:mm:ss} ({changed}px)";
         bus.Publish(new RegionChanged(character, now, changed, path, config.Beep));
+    }
+
+    /// <summary>
+    /// 감시를 시작하면 처음 읽은 화면을 한 장 저장한다 (변화가 없어도). 분석에서 눈깔을 추가할 때 이 스크린샷 위에 바로 영역을 지정할 수 있다.
+    /// 저장 범위는 설정을 따르되, '저장 안 함'이면 클라이언트 전체 화면을 저장한다. 알림은 울리지 않고 감지 기록에도 넣지 않는다.
+    /// </summary>
+    private void SaveStartShot(Frame frame)
+    {
+        try
+        {
+            var now = DateTime.Now;
+            if (config.SaveMode == SaveMode.SelectedArea)
+            {
+                var (rx, ry, rw, rh) = ResolveRoi(frame);
+                SavePng(ChangeDetector.Crop(frame, rx, ry, rw, rh), rw, rh, now);
+            }
+            else SavePng(frame.Bgra, frame.Width, frame.Height, now);
+        }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[CCTV] 시작 스크린샷 저장 실패: {ex.Message}"); }
     }
 
     private (int X, int Y, int W, int H) ResolveRoi(Frame f)
