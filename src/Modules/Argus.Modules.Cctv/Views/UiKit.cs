@@ -74,6 +74,25 @@ internal static class UiKit
         return sp;
     }
 
+    /// <summary>
+    /// 길어질 수 있는 목록을 정해진 높이 안에서 스크롤하게 감싼다. 끝까지 스크롤한 뒤의 휠 입력은 바깥(페이지) 스크롤로 넘겨서 페이지가 멈춘 것처럼 느껴지지 않게 한다.
+    /// 화면이 다시 그려져도 보던 자리를 유지하려면 <paramref name="offset"/> 으로 위치를 받고 돌려준다.
+    /// </summary>
+    public static ScrollViewer InnerScroll(UIElement content, double maxHeight, double offset = 0, Action<double>? onScrolled = null)
+    {
+        var sv = new ScrollViewer { Content = content, MaxHeight = maxHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Padding = new Thickness(0, 0, 8, 0) };
+        sv.PreviewMouseWheel += (_, e) =>
+        {
+            var atEdge = sv.ScrollableHeight <= 0 || (e.Delta > 0 && sv.VerticalOffset <= 0) || (e.Delta < 0 && sv.VerticalOffset >= sv.ScrollableHeight);
+            if (!atEdge) return;
+            e.Handled = true;
+            if (sv.Parent is UIElement parent) parent.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = UIElement.MouseWheelEvent, Source = sv });
+        };
+        if (offset > 0) sv.Loaded += (_, _) => sv.ScrollToVerticalOffset(offset);
+        if (onScrolled != null) sv.ScrollChanged += (_, e) => { if (e.VerticalChange != 0) onScrolled(sv.VerticalOffset); };
+        return sv;
+    }
+
     public static TextBlock SectionHead(string text, Thickness? margin = null) => Text(text, 15, FontWeights.SemiBold, null, margin ?? new Thickness(0, 0, 0, 2));
 
     public static Border Divider(Thickness? margin = null) => new() { Height = 1, Background = Line, Margin = margin ?? new Thickness(0, 6, 0, 6) };

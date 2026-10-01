@@ -448,6 +448,9 @@ internal sealed class CctvView : UserControl
 
     // ---------- 프로빙 ----------
 
+    private const double SignatureListHeight = 420;
+    private double _currentScroll, _historyScroll;   // 화면이 다시 그려져도 스크롤 위치를 유지
+
     private UIElement BuildSignatures(ViewData d)
     {
         var box = new StackPanel();
@@ -461,25 +464,30 @@ internal sealed class CctvView : UserControl
         cols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
         cols.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
+        // 두 목록은 각각 정해진 높이 안에서 스크롤한다 (기록이 길어져도 카드가 끝없이 늘어나지 않는다).
         var current = new StackPanel();
+        var currentRows = new StackPanel();
         current.Children.Add(ColumnTitle("현재 존재하는 시그니처", d.Signatures.Count.ToString()));
-        if (d.Signatures.Count == 0) current.Children.Add(UiKit.Dim("현재 인식된 시그니처 없음", 12, new Thickness(0, 8, 0, 0)));
+        if (d.Signatures.Count == 0) currentRows.Children.Add(UiKit.Dim("현재 인식된 시그니처 없음", 12, new Thickness(0, 8, 0, 0)));
         foreach (var s in d.Signatures)
         {
             var (name, group, unscanned) = EventPresentation.SignatureFields(s.Name, s.Group);
-            current.Children.Add(SignatureRow(Summaries.Time(s.LastSeenAt)[..5], s.Id, name, group, unscanned, null));
+            currentRows.Children.Add(SignatureRow(Summaries.Time(s.LastSeenAt)[..5], s.Id, name, group, unscanned, null));
         }
+        current.Children.Add(UiKit.InnerScroll(currentRows, SignatureListHeight, _currentScroll, o => _currentScroll = o));
         Grid.SetColumn(current, 0); cols.Children.Add(current);
 
         var history = new StackPanel();
+        var historyRows = new StackPanel();
         var sigEvents = d.Events.Where(e => e.Type.StartsWith("signature_")).ToList();
-        history.Children.Add(ColumnTitle("생성 · 소멸 기록", "전체 기록"));
-        if (sigEvents.Count == 0) history.Children.Add(UiKit.Dim("생성·소멸 기록 없음", 12, new Thickness(0, 8, 0, 0)));
-        foreach (var e in sigEvents.Take(40))
+        history.Children.Add(ColumnTitle("생성 · 소멸 기록", sigEvents.Count > 0 ? $"{sigEvents.Count}건" : "전체 기록"));
+        if (sigEvents.Count == 0) historyRows.Children.Add(UiKit.Dim("생성·소멸 기록 없음", 12, new Thickness(0, 8, 0, 0)));
+        foreach (var e in sigEvents)
         {
             var (name, group, unscanned) = EventPresentation.SignatureFields(e.Details["name"]?.ToString(), e.Details["group"]?.ToString());
-            history.Children.Add(SignatureRow(Summaries.Time(e.Time)[..5], e.Character ?? "---", name, group, unscanned, e.Type == "signature_created"));
+            historyRows.Children.Add(SignatureRow(Summaries.Time(e.Time)[..5], e.Character ?? "---", name, group, unscanned, e.Type == "signature_created"));
         }
+        history.Children.Add(UiKit.InnerScroll(historyRows, SignatureListHeight, _historyScroll, o => _historyScroll = o));
         Grid.SetColumn(history, 2); cols.Children.Add(history);
         box.Children.Add(cols);
         return UiKit.Card(box, margin: new Thickness(0, 0, 0, 14));
