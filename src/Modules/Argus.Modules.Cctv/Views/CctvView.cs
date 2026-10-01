@@ -205,7 +205,7 @@ internal sealed class CctvView : UserControl
         toggle.Clicked += () =>
         {
             _settingsOpen = !_settingsOpen;
-            if (_settingsOpen && _settingsView == null) { _settingsView = new CctvSettingsView(_svc); body.Child = _settingsView; }
+            if (_settingsOpen && _settingsView == null) { _settingsView = new CctvSettingsView(_svc, analysisTab: true); body.Child = _settingsView; }
             body.Visibility = _settingsOpen ? Visibility.Visible : Visibility.Collapsed;
             arrow.Text = _settingsOpen ? "▴" : "▾";
         };

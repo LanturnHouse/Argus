@@ -33,9 +33,9 @@ public sealed class CctvModule : IArgusModule, IDashboardContributor
     }
 
     public object? CreateView() => _service is { } s ? _view ??= new CctvView(s) : null;
-    // 비전 모델 · 분석 기록 초기화는 분석 탭의 '분석 설정' 에서 바꾼다. 분석할 스크린샷 폴더는 설정 탭의 CCTV 그룹 아래(분석)에 둔다.
+    // 분석 탭에는 비전 모델 이름과 분석 기록 초기화만 둔다. 나머지 분석 설정(서버 · 대기 시간 · 모델 내리기 · 분석 폴더)은 설정 탭의 CCTV 그룹 아래(분석)에 둔다.
     public string? SettingsParentId => "argus.capture";
-    public object? CreateSettingsView() => _service is { } s ? new CctvSettingsView(s, folderOnly: true) : null;
+    public object? CreateSettingsView() => _service is { } s ? new CctvSettingsView(s) : null;
 
     // ---------- 대시보드 ----------
 
