@@ -6,6 +6,9 @@ using System.Windows.Media.Imaging;
 
 namespace Argus.Modules.Cctv;
 
+/// <summary>감시 재시작 창의 결과.</summary>
+internal enum ResumeOutcome { Cancelled, Back, Started }
+
 /// <summary>스크린샷 위에 인식 영역(오버뷰 · 프로빙 창 · 도킹 숫자)을 마우스로 끌어서 그리는 편집기. 좌표는 이미지에 대한 퍼센트로 다룬다.</summary>
 internal sealed class RegionEditorControl : Grid
 {
@@ -108,11 +111,25 @@ internal sealed class WatcherWizard
     private WatchType _type = WatchType.Structure;
     private bool _filling;
 
-    public static void ShowFor(Window? owner, CctvService svc, Watcher? editing) => new WatcherWizard(owner, svc, editing)._window.ShowDialog();
+    private readonly bool _resume;              // 감시 재시작 모드: 캐릭터는 바꿀 수 없고, 저장 대신 그 지점부터 감시를 다시 시작한다
+    private readonly ImageRow? _startImage;     // 재시작 지점의 스크린샷 (null: 지금 이후 → 가장 최근 스크린샷 위에 그린다)
+    private readonly TextBlock _regionStatus = new() { FontSize = 12.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+    private ResumeOutcome _outcome = ResumeOutcome.Cancelled;
+    private Button? _saveButton, _backButton;
 
-    private WatcherWizard(Window? owner, CctvService svc, Watcher? editing)
+    public static void ShowFor(Window? owner, CctvService svc, Watcher? editing) => new WatcherWizard(owner, svc, editing, null, false)._window.ShowDialog();
+
+    /// <summary>일시중지한 감시를 다시 시작하는 창 (눈깔 수정과 같은 창, 캐릭터 고정). 재시작하면 Started, '이전'이면 Back.</summary>
+    internal static ResumeOutcome ShowResume(Window? owner, CctvService svc, Watcher watcher, ImageRow? startImage)
     {
-        _svc = svc; _editing = editing;
+        var wizard = new WatcherWizard(owner, svc, watcher, startImage, true);
+        wizard._window.ShowDialog();
+        return wizard._outcome;
+    }
+
+    private WatcherWizard(Window? owner, CctvService svc, Watcher? editing, ImageRow? startImage, bool resume)
+    {
+        _svc = svc; _editing = editing; _resume = resume; _startImage = startImage;
         _known = svc.KnownCharacters();
         if (editing != null && !_known.Any(k => k.Name == editing.Character)) _known.Add((editing.Character, 0, ""));
         if (editing != null) { _label.Text = editing.Label; _type = editing.WatchType; _editor.Regions.AddRange(editing.Regions); }
@@ -150,14 +167,26 @@ internal sealed class WatcherWizard
         regionHead.Children.Add(UiKit.Text("인식 영역", 13, FontWeights.SemiBold, null, new Thickness(0, 0, 0, 6)));
         regionHead.Children.Add(_kindBar);
 
-        var save = UiKit.Button("설정 저장", OnSave, "PrimaryButton"); save.Margin = new Thickness(0);
+        var save = UiKit.Button(resume ? "감시 시작" : "설정 저장", () => { if (_resume) _ = ResumeAsync(); else OnSave(); }, "PrimaryButton"); save.Margin = new Thickness(0);
+        _saveButton = save;
         var footer = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
-        DockPanel.SetDock(save, Dock.Right);
-        footer.Children.Add(save); footer.Children.Add(_error);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        if (resume)
+        {
+            _backButton = UiKit.Button("←  이전", () => { _outcome = ResumeOutcome.Back; _window.Close(); }, "GhostButton");
+            _backButton.Margin = new Thickness(0, 0, 8, 0);
+            buttons.Children.Add(_backButton);
+        }
+        buttons.Children.Add(save);
+        DockPanel.SetDock(buttons, Dock.Right);
+        var messages = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        if (resume) messages.Children.Add(_regionStatus);
+        messages.Children.Add(_error);
+        footer.Children.Add(buttons); footer.Children.Add(messages);
 
         var root = new DockPanel { Margin = new Thickness(22, 18, 22, 18) };
         var head = new StackPanel();
-        head.Children.Add(UiKit.Text(editing == null ? "감시 눈깔 등록" : "감시 눈깔 수정", 18, FontWeights.Bold));
+        head.Children.Add(UiKit.Text(resume ? "감시 재시작" : editing == null ? "감시 눈깔 등록" : "감시 눈깔 수정", 18, FontWeights.Bold));
         head.Children.Add(new Border { Height = 12 });
         head.Children.Add(top);
         head.Children.Add(regionHead);
@@ -168,9 +197,10 @@ internal sealed class WatcherWizard
         _regionList.Margin = new Thickness(0, 8, 0, 0);
         root.Children.Add(head); root.Children.Add(footer); root.Children.Add(_regionList); root.Children.Add(_help); root.Children.Add(_editor);
 
-        _window = DialogKit.Create(owner, editing == null ? "감시 눈깔 등록" : "감시 눈깔 수정", 1040, 800, root);
+        _window = DialogKit.Create(owner, resume ? "감시 재시작" : editing == null ? "감시 눈깔 등록" : "감시 눈깔 수정", 1040, 800, root);
         _editor.Changed += RefreshRegionList;
         FillCharacters(editing?.Character);
+        if (resume) _character.IsEnabled = false;   // 캐릭터는 바꿀 수 없다
         _character.SelectionChanged += (_, _) => { if (!_filling) LoadImage(); };
         LoadImage();
         RefreshRegionList();
@@ -199,6 +229,16 @@ internal sealed class WatcherWizard
     private void LoadImage()
     {
         var name = CurrentCharacter;
+        if (_resume)
+        {
+            // 재시작 지점의 스크린샷(없으면 가장 최근 스크린샷) 위에서 영역을 확인한다.
+            var path = _startImage?.FilePath ?? (name.Length > 0 && _svc.LatestImageId(name) is { } li ? _svc.Store.ImagePath(li) : null);
+            _editor.SetImage(DialogKit.LoadImage(path));
+            _help.Text = _startImage != null
+                ? $"{_startImage.CapturedAt.Substring(11, 12)} 스크린샷부터 다시 시작합니다. 이전에 지정한 영역이 그대로 선택돼 있습니다 — 그대로 시작하거나, 지우고 다시 그리면 이 지점부터 새 영역으로 분석합니다."
+                : "지금 이후에 촬영되는 스크린샷부터 다시 시작합니다 (화면은 가장 최근 스크린샷). 이전에 지정한 영역이 그대로 선택돼 있습니다 — 그대로 시작하거나, 지우고 다시 그리면 이 지점부터 새 영역으로 분석합니다.";
+            return;
+        }
         var id = name.Length > 0 ? _svc.LatestImageId(name) : null;
         var latest = _known.FirstOrDefault(k => k.Name == name).Latest;
         _editor.SetImage(id is { } i ? DialogKit.LoadImage(_svc.Store.ImagePath(i)) : null);
@@ -225,8 +265,35 @@ internal sealed class WatcherWizard
         _window.Close();
     }
 
+    /// <summary>재시작 모드의 '감시 시작': 이름 · 타입 · 영역을 반영해 그 지점부터 감시를 다시 시작한다. 앞의 분석 결과는 그대로 둔다.</summary>
+    private async Task ResumeAsync()
+    {
+        _error.Text = "";
+        if (string.IsNullOrWhiteSpace(_label.Text)) { _error.Text = "감지 이름을 입력해주세요."; return; }
+        if (_editor.Regions.Count == 0) { _error.Text = "인식 영역을 하나 이상 지정해주세요."; return; }
+        if (_type != _editing!.WatchType && _svc.Store.HasProcessedFrom(_editing.Character, _startImage?.CaptureKey ?? CctvStore.KeyOf(DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture))))
+        {
+            _error.Text = "이미 분석한 스크린샷부터 다시 시작할 때는 감시 타입을 바꿀 수 없습니다 (앞의 결과를 새 타입으로 다시 해석하게 됩니다). 분석하지 않은 스크린샷이나 '지금 이후'부터 시작하세요.";
+            return;
+        }
+        _saveButton!.IsEnabled = false; _backButton!.IsEnabled = false;
+        try
+        {
+            await _svc.ResumeWatchingAsync(new Watcher(_editing.Id, _label.Text.Trim(), _editing.Character, _type, true, 2, [.. _editor.Regions]), _startImage, [.. _editor.Regions]);
+            _outcome = ResumeOutcome.Started;
+            _window.Close();
+        }
+        catch (Exception ex) { _error.Text = "재시작하지 못했습니다: " + ex.Message; _saveButton.IsEnabled = true; _backButton.IsEnabled = true; }
+    }
+
     private void RefreshRegionList()
     {
+        if (_resume && _editing != null)
+        {
+            var same = CctvStore.SameRegions(_editor.Regions, _editing.Regions);
+            _regionStatus.Text = same ? "인식 영역: 이전 영역 그대로" : "인식 영역: 새 영역으로 변경됨";
+            _regionStatus.Foreground = same ? UiKit.Good : UiKit.Warn;
+        }
         _regionList.Children.Clear();
         for (int i = 0; i < _editor.Regions.Count; i++)
         {

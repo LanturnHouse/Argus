@@ -367,6 +367,14 @@ public sealed class CctvStore : IDisposable
         return plan!;
     }
 
+    /// <summary>이름과 감시 타입만 바꾼다 (재시작 창). 캐릭터와 영역은 건드리지 않는다.</summary>
+    internal void UpdateWatcherMeta(string watcherId, string label, WatchType type) =>
+        Db.Exec("UPDATE watchers SET label = ?, watch_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", label, type.Db(), watcherId);
+
+    /// <summary>이 촬영 키 이후에 이미 분석한 이미지가 있는가 (그 지점부터 시작하면 되감기가 필요하다).</summary>
+    internal bool HasProcessedFrom(string character, string key) =>
+        Db.One("SELECT 1 AS ok FROM images WHERE character_name = ? AND capture_key >= ? AND processing_status = 'processed'", character, key) != null;
+
     /// <summary>일시중지를 푼다 (되감기 복원이 끝난 뒤 호출 — 그 전에는 분석이 이 캐릭터의 이미지를 집어 가지 않는다).</summary>
     internal void ResumeCharacter(string character) => Db.Exec("UPDATE watchers SET paused = 0, paused_at = NULL WHERE character_name = ?", character);
 

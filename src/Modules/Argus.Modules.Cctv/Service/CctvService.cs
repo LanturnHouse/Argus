@@ -352,6 +352,7 @@ public sealed class CctvService : IDisposable
         if (startImage != null) { startTime = startImage.CapturedAt; startKey = startImage.CaptureKey; }
         else { startTime = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture); startKey = CctvStore.KeyOf(startTime); }
 
+        Store.UpdateWatcherMeta(watcher.Id, watcher.Label, watcher.WatchType);   // 재시작 창에서 바꾼 이름 · 감시 타입
         var plan = Store.ApplyRestartPoint(watcher.Character, startKey, startTime, new Dictionary<string, IReadOnlyList<RegionDef>> { [watcher.Id] = regions }, startImage?.Filename);
         _recognizer.ResetReuse();
         if (plan.Rollback)
