@@ -85,6 +85,12 @@ public sealed class VisionClient : IDisposable
         catch (Exception ex) { return (null, ex is HttpRequestException ? $"Ollama({settings.Host})에 연결할 수 없습니다. 실행 중인지 확인하세요." : ex.Message); }
     }
 
+    /// <summary>
+    /// 모델에 주는 문맥 길이(토큰). Ollama 기본값(수만 토큰)은 읽을 때 쓰이지 않는 메모리(KV 캐시)를 그래픽 메모리에 잡아 두므로,
+    /// 프롬프트 + 이미지 + 답이 들어갈 만큼만 쓴다 (7B 모델에서 약 1.4GB 절약, EVE 클라이언트가 그래픽 메모리를 많이 쓸 때 중요하다).
+    /// </summary>
+    internal const int ContextTokens = 8192;
+
     /// <summary>답의 길이 상한. 모델이 같은 행을 끝없이 되풀이하는 일이 있어, 영역마다 정상 답이 닿을 만한 만큼만 허용해 헛도는 시간을 줄인다.</summary>
     private static int MaxTokens(RegionKind kind) => kind switch { RegionKind.Dock => 120, RegionKind.Probe => 2000, _ => 3500 };
 
@@ -96,7 +102,7 @@ public sealed class VisionClient : IDisposable
         {
             ["model"] = settings.Model, ["prompt"] = prompt, ["images"] = new JsonArray(Convert.ToBase64String(png)),
             ["format"] = "json", ["stream"] = false, ["keep_alive"] = settings.KeepAlive,
-            ["options"] = new JsonObject { ["temperature"] = 0, ["num_predict"] = MaxTokens(kind) },
+            ["options"] = new JsonObject { ["temperature"] = 0, ["num_predict"] = MaxTokens(kind), ["num_ctx"] = ContextTokens },
         };
         var (json, error) = await PostGenerateAsync(settings, body, settings.TimeoutSeconds, ct).ConfigureAwait(false);
         if (json == null) { LastError = error; LastFailureWasBadResponse = false; return null; }
@@ -143,7 +149,7 @@ public sealed class VisionClient : IDisposable
     /// <summary>모델을 메모리(GPU)에 올린다 (질문 없이 올리기만 한다). 처음에는 몇 초에서 수십 초 걸릴 수 있다. 성공하면 null, 실패하면 이유.</summary>
     public async Task<string?> LoadModelAsync(VisionSettings settings, CancellationToken ct = default)
     {
-        var body = new JsonObject { ["model"] = settings.Model, ["keep_alive"] = settings.KeepAlive, ["stream"] = false };
+        var body = new JsonObject { ["model"] = settings.Model, ["keep_alive"] = settings.KeepAlive, ["stream"] = false, ["options"] = new JsonObject { ["num_ctx"] = ContextTokens } };   // 읽을 때와 같은 num_ctx 여야 다시 올리지 않는다
         var (json, error) = await PostGenerateAsync(settings, body, 180, ct).ConfigureAwait(false);
         if (json == null) { LastError = error; return error; }
         LastError = null;
