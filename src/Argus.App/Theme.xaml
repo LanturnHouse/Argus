@@ -284,11 +284,11 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
                     <Grid>
-                        <ToggleButton x:Name="toggle" Focusable="False" ClickMode="Press"
+                        <ToggleButton x:Name="toggle" Focusable="False" ClickMode="Press" Background="{StaticResource Surface2}" BorderBrush="{StaticResource Line}"
                                       IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
                             <ToggleButton.Template>
                                 <ControlTemplate TargetType="ToggleButton">
-                                    <Border Background="{StaticResource Surface2}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Padding="10,7">
+                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,7">
                                         <Grid>
                                             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="1" Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="10" Foreground="{StaticResource TextDim}" VerticalAlignment="Center" Margin="8,0,0,0"/>
@@ -297,8 +297,13 @@
                                 </ControlTemplate>
                             </ToggleButton.Template>
                         </ToggleButton>
-                        <ContentPresenter IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}"
-                                          Margin="10,7,28,7" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                        <ContentPresenter IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" TextElement.Foreground="{TemplateBinding Foreground}"
+                                          Margin="10,7,28,7" VerticalAlignment="Center" HorizontalAlignment="Left">
+                            <ContentPresenter.Resources>
+                                <!-- 전역 TextBlock 스타일이 글자색을 고정하므로, 선택 항목 글자는 콤보박스 글자색(비활성이면 회색)을 따르게 한다 -->
+                                <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}"/></Style>
+                            </ContentPresenter.Resources>
+                        </ContentPresenter>
                         <Popup IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
                             <Border MinWidth="{Binding ActualWidth, ElementName=toggle}" Background="{StaticResource Surface2}"
                                     BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" Margin="0,4,0,8" Padding="2">
@@ -307,6 +312,15 @@
                             </Border>
                         </Popup>
                     </Grid>
+                    <ControlTemplate.Triggers>
+                        <!-- 비활성: 짙은 회색 (바꿀 수 없다는 표시) -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="toggle" Property="Background" Value="#14161B"/>
+                            <Setter TargetName="toggle" Property="BorderBrush" Value="#22252D"/>
+                            <Setter Property="Foreground" Value="#5C6372"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
