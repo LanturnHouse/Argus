@@ -36,7 +36,6 @@
                                 <RadioButton x:Name="ModeIdle" GroupName="mode" Content="비전투" Style="{StaticResource Segment}" Checked="Mode_Checked"/>
                             </UniformGrid>
                         </Border>
-                        <TextBlock x:Name="ModeNote" Style="{StaticResource Dim}" FontSize="11.5" TextWrapping="Wrap" Margin="2,6,0,0"/>
                     </StackPanel>
                 </Border>
 

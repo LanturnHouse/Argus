@@ -35,7 +35,6 @@ public partial class MainWindow : Window
 
         _modeReady = false;
         (CombatMode.Load(app.Settings) ? ModeCombat : ModeIdle).IsChecked = true;
-        ShowModeNote();
         _modeReady = true;
 
         UpdateClients(app.Registry.Current);
@@ -58,12 +57,8 @@ public partial class MainWindow : Window
         if (!_modeReady) return;
         var app = (App)Application.Current;
         CombatMode.Set(app.Settings, app.Bus, ModeCombat.IsChecked == true);
-        ShowModeNote();
     }
 
-    private void ShowModeNote() => ModeNote.Text = ModeCombat.IsChecked == true
-        ? "전투 로그 · 태클 · 레드박싱 작동 중"
-        : "전투 기능 정지 (리소스 절약)";
 
     private void UpdateClients(IReadOnlyList<EveClient> clients) => ClientCount.Text = clients.Count.ToString();
 
