@@ -50,27 +50,34 @@ internal static class DialogKit
     public static UIElement Fact(string label, string value) => Fact(label, UiKit.Text(value, 13, null, null, null, true));
 }
 
-/// <summary>이벤트 판정 근거: 판정 프레임(인식 영역 표시)과 이전 프레임, 판정 사유.</summary>
+/// <summary>이벤트 판정 근거: 판정에 쓴 프레임들을 시간순으로 모두 보여 준다 (각 프레임이 어떤 역할이었는지와 그 프레임에서 읽은 인식 영역 표시).</summary>
 internal static class EvidenceWindow
 {
+    private sealed record Frame(long ImageId, ImageRow Image, ImageDetail Detail, List<string> Labels, HashSet<RegionKind> Regions);
+
     public static void ShowFor(Window? owner, CctvService svc, EventRow e, Func<string?, string> canonical)
     {
-        var detail = e.ImageId is { } id ? svc.Store.Image(id) : null;
-        var kind = e.Type.StartsWith("signature_") ? RegionKind.Probe : e.Type == "docked" ? RegionKind.Dock : RegionKind.Overview;
-        var box = detail?.Observations.FirstOrDefault(o => o.Kind == kind).Payload.SourceBox;
+        var frames = CollectFrames(svc, e);
 
         var left = new StackPanel();
-        if (e.PreviousImageId is { } prevId && svc.Store.ImagePath(prevId) is { } prevPath)
+        if (frames.Count == 0) left.Children.Add(UiKit.Dim("원본 이미지를 찾을 수 없습니다 (폴더에서 삭제되었을 수 있습니다).", 12));
+        for (int i = 0; i < frames.Count; i++)
         {
-            left.Children.Add(UiKit.Dim($"비교: 이전 프레임 · {e.PreviousFilename}", 11.5, new Thickness(0, 0, 0, 4)));
-            left.Children.Add(Screenshot(prevPath, null));
+            var f = frames[i];
+            var head = new DockPanel { Margin = new Thickness(0, i == 0 ? 0 : 16, 0, 4) };
+            var open = UiKit.Button("원본 열기", () => Open(f.Image.FilePath)); open.Padding = new Thickness(8, 2, 8, 2); open.Margin = new Thickness(8, 0, 0, 0);
+            DockPanel.SetDock(open, Dock.Right);
+            head.Children.Add(open);
+            var title = new StackPanel { Orientation = Orientation.Horizontal };
+            title.Children.Add(UiKit.Text($"{i + 1}", 12, FontWeights.Bold, UiKit.AccentText, new Thickness(0, 0, 8, 0)));
+            title.Children.Add(UiKit.Text(string.Join(" · ", f.Labels), 13, FontWeights.SemiBold));
+            var meta = UiKit.Dim($"{Summaries.Time(f.Image.CapturedAt)}.{f.Image.CapturedAt[20..23]}  ·  {f.Image.Filename}", 11.5, new Thickness(10, 0, 0, 0), false);
+            title.Children.Add(meta);
+            head.Children.Add(title);
+            left.Children.Add(head);
+            var regions = f.Regions.SelectMany(k => f.Detail.Observations.Where(o => o.Kind == k).Select(o => o.Payload.SourceBox).Where(b => b != null).Select(b => (b!, k))).ToList();
+            left.Children.Add(Screenshot(f.Image.FilePath, regions));
         }
-        if (detail != null)
-        {
-            left.Children.Add(UiKit.Dim(e.PreviousImageId != null ? $"판정 프레임 · {e.Filename}" : e.Filename ?? "", 11.5, new Thickness(0, e.PreviousImageId != null ? 12 : 0, 0, 4)));
-            left.Children.Add(Screenshot(detail.Image.FilePath, box is null ? null : (box, kind)));
-        }
-        else left.Children.Add(UiKit.Dim("원본 이미지를 찾을 수 없습니다 (폴더에서 삭제되었을 수 있습니다).", 12));
 
         var right = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
         var verification = EventPresentation.Verification(e);
@@ -78,10 +85,9 @@ internal static class EvidenceWindow
         right.Children.Add(DialogKit.Fact("캐릭터 / 콥 / 함선", $"{e.Character ?? "미확인"} · {(e.Corporation is { Length: > 0 } c && canonical(c) is var t && t != "미확인" ? $"[{t}]" : "—")}\n{EventPresentation.Detail(e)}"));
         right.Children.Add(DialogKit.Fact("감시 눈깔", e.WatcherLabel ?? "미지정 눈깔"));
         right.Children.Add(DialogKit.Fact("판정 시각", e.Time.Replace("T", " ")));
+        right.Children.Add(DialogKit.Fact("판정에 쓴 프레임", $"{frames.Count}장 (왼쪽, 시간순)"));
         right.Children.Add(DialogKit.Fact("판정 규칙", EventPresentation.Rule(e)));
         if (e.Details["reason"]?.ToString() is { Length: > 0 } reason) right.Children.Add(DialogKit.Fact("판정 사유 코드", reason));
-        if (detail != null) right.Children.Add(UiKit.Button("판정 프레임 원본 열기", () => Open(detail.Image.FilePath)));
-        if (e.PreviousImageId is { } p2 && svc.Store.ImagePath(p2) is { } pp) right.Children.Add(UiKit.Button("이전 프레임 원본 열기", () => Open(pp)));
 
         var grid = new Grid { Margin = new Thickness(18) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.6, GridUnitType.Star) });
@@ -93,37 +99,64 @@ internal static class EvidenceWindow
         DialogKit.Create(owner, $"{EventPresentation.Label(e.Type)} 판정 근거", 1080, 720, grid).ShowDialog();
     }
 
+    /// <summary>이벤트에 기록된 근거 프레임들(없으면 예전 이벤트이므로 이전 프레임 + 판정 프레임)을 같은 이미지끼리 묶어 시간순으로 돌려준다.</summary>
+    private static List<Frame> CollectFrames(CctvService svc, EventRow e)
+    {
+        var wanted = new List<(long Id, string Label, RegionKind Kind)>();
+        RegionKind Kind(string? s) => s switch { "dock" => RegionKind.Dock, "probe" => RegionKind.Probe, _ => RegionKind.Overview };
+        if (e.Details["evidence"] is System.Text.Json.Nodes.JsonArray list)
+            foreach (var item in list.OfType<System.Text.Json.Nodes.JsonObject>())
+                if (item["imageId"]?.GetValue<long>() is { } id) wanted.Add((id, item["label"]?.GetValue<string>() ?? "", Kind(item["region"]?.GetValue<string>())));
+        var main = e.Type.StartsWith("signature_") ? RegionKind.Probe : e.Type == "docked" ? RegionKind.Dock : RegionKind.Overview;
+        if (wanted.Count == 0 && e.PreviousImageId is { } prev) wanted.Add((prev, "이전 프레임", main));
+        if (e.ImageId is { } cur && wanted.All(w => w.Id != cur)) wanted.Add((cur, "판정 프레임", main));
+
+        var frames = new List<Frame>();
+        foreach (var group in wanted.GroupBy(w => w.Id))
+        {
+            if (svc.Store.Image(group.Key) is not { } detail) continue;
+            frames.Add(new Frame(group.Key, detail.Image, detail, [.. group.Select(w => w.Label).Distinct()], [.. group.Select(w => w.Kind)]));
+        }
+        return [.. frames.OrderBy(f => f.Image.CaptureKey, StringComparer.Ordinal)];
+    }
+
     private static void Open(string path) { try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch { /* 연결 프로그램 없음 */ } }
 
     /// <summary>스크린샷을 창 폭에 맞춰 보여 주고, 인식 영역이 있으면 그 자리에 테두리를 그린다.</summary>
-    private static UIElement Screenshot(string path, (SourceBox Box, RegionKind Kind)? region)
+    private static UIElement Screenshot(string path, List<(SourceBox Box, RegionKind Kind)> regions)
     {
         var bmp = DialogKit.LoadImage(path);
         if (bmp == null) return UiKit.Dim("이미지를 열 수 없습니다.", 12);
         var grid = new Grid { Background = Brushes.Black };
         var image = new Image { Source = bmp, Stretch = Stretch.Uniform };
         grid.Children.Add(image);
-        if (region is { } r)
+        if (regions.Count > 0)
         {
             var canvas = new Canvas { IsHitTestVisible = false };
-            var rect = new System.Windows.Shapes.Rectangle { Stroke = UiKit.Accent, StrokeThickness = 2, Fill = new SolidColorBrush(Color.FromArgb(0x22, 0x4C, 0x8D, 0xFF)) };
-            var label = new Border { Background = UiKit.Accent, Padding = new Thickness(6, 1, 6, 2), Child = new TextBlock { Text = $"{r.Kind.Label()} 추출 영역", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White } };
-            canvas.Children.Add(rect); canvas.Children.Add(label);
+            var shapes = regions.Select(r =>
+            {
+                var rect = new System.Windows.Shapes.Rectangle { Stroke = UiKit.Accent, StrokeThickness = 2, Fill = new SolidColorBrush(Color.FromArgb(0x22, 0x4C, 0x8D, 0xFF)) };
+                var label = new Border { Background = UiKit.Accent, Padding = new Thickness(6, 1, 6, 2), Child = new TextBlock { Text = $"{r.Kind.Label()} 추출 영역", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White } };
+                canvas.Children.Add(rect); canvas.Children.Add(label);
+                return (r.Box, rect, label);
+            }).ToList();
             grid.Children.Add(canvas);
             void Place()
             {
                 double scale = Math.Min(grid.ActualWidth / bmp.PixelWidth, grid.ActualHeight / bmp.PixelHeight);
                 if (double.IsNaN(scale) || scale <= 0) return;
                 double w = bmp.PixelWidth * scale, h = bmp.PixelHeight * scale, ox = (grid.ActualWidth - w) / 2, oy = (grid.ActualHeight - h) / 2;
-                Canvas.SetLeft(rect, ox + r.Box.Left * scale); Canvas.SetTop(rect, oy + r.Box.Top * scale);
-                rect.Width = Math.Max(2, r.Box.Width * scale); rect.Height = Math.Max(2, r.Box.Height * scale);
-                Canvas.SetLeft(label, ox + r.Box.Left * scale); Canvas.SetTop(label, Math.Max(0, oy + r.Box.Top * scale - 20));
+                foreach (var (box, rect, label) in shapes)
+                {
+                    Canvas.SetLeft(rect, ox + box.Left * scale); Canvas.SetTop(rect, oy + box.Top * scale);
+                    rect.Width = Math.Max(2, box.Width * scale); rect.Height = Math.Max(2, box.Height * scale);
+                    Canvas.SetLeft(label, ox + box.Left * scale); Canvas.SetTop(label, Math.Max(0, oy + box.Top * scale - 20));
+                }
             }
             grid.SizeChanged += (_, _) => Place();
         }
         return grid;
     }
-
 }
 
 /// <summary>요약 카드(현재 도킹 / 감지·미도킹 / 성계 이탈)의 상세 목록.</summary>

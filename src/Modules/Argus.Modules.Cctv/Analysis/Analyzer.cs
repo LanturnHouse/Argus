@@ -83,7 +83,7 @@ public sealed class Analyzer(CctvStore store)
         return readings.Count == dock.Count && readings.Count > 0 ? readings : null;
     }
 
-    private sealed record DockChange(int RegionIndex, int Before, int After, int Delta);
+    private sealed record DockChange(int RegionIndex, int Before, int After, int Delta, long BeforeImageId);
 
     /// <summary>
     /// 이번 프레임의 도킹 숫자가 '마지막으로 제대로 읽은 값'에서 바뀌었으면 그 변화를 돌려준다. 직전 프레임에서 숫자를 못 읽었어도(흐림, 오독) 그 앞의 값과 비교한다.
@@ -97,7 +97,7 @@ public sealed class Analyzer(CctvStore store)
         foreach (var (regionIndex, count) in cur)
         {
             var prev = Db.One("""
-                SELECT json_extract(o.payload_json, '$.fields.dockCount') AS cnt
+                SELECT json_extract(o.payload_json, '$.fields.dockCount') AS cnt, i.id AS imageId
                 FROM observations o JOIN images i ON i.id = o.image_id
                 WHERE o.watcher_id = ? AND o.region_kind = 'dock' AND i.capture_key < ?
                   AND json_extract(o.payload_json, '$.regionIndex') = ?
@@ -106,7 +106,7 @@ public sealed class Analyzer(CctvStore store)
                 """, watcherId, captureKey, regionIndex);
             if (prev == null) continue;   // 이 영역은 처음 읽었다: 비교할 값이 없다
             var before = (int)prev.Long("cnt");
-            if (count != before) changes.Add(new DockChange(regionIndex, before, count, count - before));
+            if (count != before) changes.Add(new DockChange(regionIndex, before, count, count - before, prev.Long("imageId")));
         }
         return changes.Count == 1 ? changes[0] : null;
     }
@@ -162,6 +162,46 @@ public sealed class Analyzer(CctvStore store)
         return changes > 0 ? Db.LastInsertId() : null;
     }
 
+    // ---------- 판정 근거 프레임 ----------
+    // 이벤트의 details_json "evidence" 에 '이 판정에 쓴 프레임들'을 [{imageId, label, region}] 로 남긴다 (판정 근거 창이 시간순으로 모두 보여 준다).
+
+    private static void AddEvidence(JsonObject details, long? imageId, string label, string region = "overview")
+    {
+        if (imageId is not { } id) return;
+        if (details["evidence"] is not JsonArray list) { list = []; details["evidence"] = list; }
+        if (list.OfType<JsonObject>().Any(x => x["imageId"]?.GetValue<long>() == id && x["label"]?.GetValue<string>() == label)) return;
+        list.Add(new JsonObject { ["imageId"] = id, ["label"] = label, ["region"] = region });
+    }
+
+    /// <summary>이 입장 이벤트가 이미 가진 근거 프레임들을 details 에 이어 붙인다 (입장 판정 때의 프레임 — 워프인의 모습 등 — 이 이탈·도킹 근거에도 보이도록).</summary>
+    private void CopyEntryEvidence(JsonObject details, long? entryEventId, bool includeDock = true)
+    {
+        if (entryEventId == null) return;
+        var row = Db.One("SELECT image_id, previous_image_id, details_json FROM events WHERE id = ?", entryEventId);
+        if (row == null) return;
+        var old = CctvJson.ParseObject(row.Str("details_json"));
+        if (old["evidence"] is JsonArray list)
+        {
+            foreach (var item in list.OfType<JsonObject>())
+            {
+                var region = item["region"]?.GetValue<string>() ?? "overview";
+                if (!includeDock && region == "dock") continue;   // 이탈·도킹 근거에 입장 때의 도킹 숫자 프레임은 필요 없다
+                AddEvidence(details, item["imageId"]?.GetValue<long>(), item["label"]?.GetValue<string>() ?? "", region);
+            }
+        }
+        else
+        {
+            AddEvidence(details, row.LongN("previous_image_id"), "나타나기 직전 프레임");
+            AddEvidence(details, row.LongN("image_id"), "오버뷰에 처음 나타남");
+        }
+    }
+
+    private static JsonObject EvidenceDetails(JsonObject details, params (long? ImageId, string Label)[] frames)
+    {
+        foreach (var (id, label) in frames) AddEvidence(details, id, label);
+        return details;
+    }
+
     private bool ReviseEntryEvent(long? eventId, EventDraft e)
     {
         if (eventId == null) return false;
@@ -192,7 +232,7 @@ public sealed class Analyzer(CctvStore store)
         // 1) 이번 프레임에서 도킹 숫자가 바뀌었으면 몫으로 적어 둔다 (줄었으면 언독 몫, 늘었으면 도킹 몫).
         if (DockCounterChange(watcherId, image.CaptureKey, current) is { } change)
         {
-            var details = Obj(("dockCountBefore", change.Before), ("dockCountAfter", change.After), ("dockRegionIndex", change.RegionIndex), ("imageId", image.Id));
+            var details = Obj(("dockCountBefore", change.Before), ("dockCountAfter", change.After), ("dockRegionIndex", change.RegionIndex), ("imageId", image.Id), ("beforeImageId", change.BeforeImageId));
             Db.Exec("INSERT INTO dock_credits (watcher_id, kind, amount, at, details_json) VALUES (?, ?, ?, ?, ?)",
                 watcherId, change.Delta < 0 ? "entry" : "exit", Math.Abs(change.Delta), image.CapturedAt, CctvJson.Compact(details));
         }
@@ -244,6 +284,9 @@ public sealed class Analyzer(CctvStore store)
                         ("dockCountBefore", credit.Details["dockCountBefore"]), ("dockCountAfter", credit.Details["dockCountAfter"]), ("dockRegionIndex", credit.Details["dockRegionIndex"]),
                         ("transitionImageId", e.ImageId), ("confirmedImageId", image.Id));
                     d.Remove("dockPending");
+                    var dockWord = kind == "entry" ? "감소" : "증가";
+                    AddEvidence(d, credit.Details["beforeImageId"]?.GetValue<long>(), $"변화 전 도킹 수 {credit.Details["dockCountBefore"]}", "dock");
+                    AddEvidence(d, credit.Details["imageId"]?.GetValue<long>(), $"도킹 수 {dockWord} 확인 ({credit.Details["dockCountBefore"]} → {credit.Details["dockCountAfter"]})", "dock");
                     Save(e, newType, d, image.Id, e.ImageId == image.Id ? e.PreviousImageId : e.ImageId, explicitImage: true);
                     confirmed.Add(e.Id);
                     if (--credit.Amount <= 0) { Db.Exec("DELETE FROM dock_credits WHERE id = ?", credit.Id); queue.Dequeue(); }
@@ -417,6 +460,8 @@ public sealed class Analyzer(CctvStore store)
                         Db.Exec("UPDATE current_objects SET entry_type = ?, entry_confirmed = 1 WHERE watcher_id = ? AND identity_key = ?", entryType, watcherId, identity);
                         var details = Obj(("distance", prevRow.Distance),
                             ("reason", isCovert ? "covert_ops_hull" : isWarpIn ? "decelerated_from_warp_speed" : entryType == "appeared" ? "first_speed_unreadable" : gate ? "first_seen_at_gate" : "first_seen_at_structure"));
+                        CopyEntryEvidence(details, prevRow.EntryEventId);
+                        AddEvidence(details, image.Id, isWarpIn ? "속도 감소 확인 (워프인 판정)" : isCovert ? "코버트 선체 확인" : "첫 속도 확인");
                         if (isWarpIn) Merge(details, ("verification", "confirmed"), ("firstSpeed", firstSpeed), ("previousSpeed", lastSpeed), ("nextSpeed", row.Speed));
                         if (entryType == "undocked") Merge(details, ("verification", "estimated"), ("dockPending", "entry"), ("dockFrames", 0));
                         if (isCovert && watchType == WatchType.Structure) Merge(details, ("dockPending", "entry_blocker"), ("dockFrames", 0));
@@ -450,6 +495,8 @@ public sealed class Analyzer(CctvStore store)
                 // 코버트 선체는 클로킹한 채 워프할 수 있어 워프/점프 구분과 속도 추세가 의미 없다: 다음 프레임을 기다리지 않고 바로 기록한다.
                 var details = Obj(("distance", row.Distance), ("reason", "covert_ops_hull"));
                 if (watchType == WatchType.Structure) Merge(details, ("dockPending", "entry_blocker"), ("dockFrames", 0));
+                AddEvidence(details, previous.ImageId, "나타나기 직전 프레임");
+                AddEvidence(details, image.Id, "오버뷰에 처음 나타남");
                 var entryEventId = InsertEvent(new EventDraft { Time = image.CapturedAt, Type = "covop_in", Character = row.Name, Corporation = row.Corporation, Ship = row.Ship, Speed = row.Speed,
                     WatcherId = watcherId, Confidence = row.Confidence, ImageId = image.Id, PreviousImageId = previous.ImageId, Details = details });
                 Db.Exec(InsertSql, watcherId, identity, row.Name, NullIfEmpty(row.Ship), NullIfEmpty(row.Corporation), NullIfEmpty(row.Distance), row.Speed, row.Confidence, image.Id, image.CapturedAt, "covop_in", image.CapturedAt, brightness, 1, previous.ImageId, entryEventId);
@@ -466,6 +513,8 @@ public sealed class Analyzer(CctvStore store)
                 var details = Obj(("distance", row.Distance), ("reason", estimatedWarp ? "high_first_speed" : gate ? "first_seen_at_gate" : "first_seen_at_structure"));
                 if (estimatedWarp) Merge(details, ("verification", "estimated"), ("firstSpeed", row.Speed));
                 if (immediateType == "undocked") Merge(details, ("verification", "estimated"), ("dockPending", "entry"), ("dockFrames", 0));
+                AddEvidence(details, previous.ImageId, "나타나기 직전 프레임");
+                AddEvidence(details, image.Id, estimatedWarp ? "고속으로 오버뷰에 나타남" : "오버뷰에 처음 나타남");
                 newEventId = InsertEvent(new EventDraft { Time = image.CapturedAt, Type = newEntryType, Character = row.Name, Corporation = row.Corporation, Ship = row.Ship, Speed = row.Speed,
                     WatcherId = watcherId, Confidence = row.Confidence, ImageId = image.Id, PreviousImageId = previous.ImageId, Details = details });
             }
@@ -485,7 +534,7 @@ public sealed class Analyzer(CctvStore store)
                 // 쓸 만한 첫 속도도, 알려진 선체도 없이 사라졌다: 나간 뒤에 워프를 지어내지 않고 '나타났음'만 기록한다.
                 InsertEvent(new EventDraft { Time = row.FirstSeenAt ?? image.CapturedAt, Type = isCovert ? "covop_in" : "appeared", Character = row.Name, Corporation = row.Corporation, Ship = row.Ship, Speed = row.Speed,
                     WatcherId = watcherId, Confidence = row.Confidence, ImageId = row.LastImageId, PreviousImageId = row.EntryPreviousImageId,
-                    Details = Obj(("distance", row.Distance), ("reason", "entry_unconfirmed_before_exit")) });
+                    Details = EvidenceDetails(Obj(("distance", row.Distance), ("reason", "entry_unconfirmed_before_exit")), (row.EntryPreviousImageId, "나타나기 직전 프레임"), (row.LastImageId, "오버뷰에 나타남")) });
             }
 
             // 마지막 속도가 높으면 워프아웃 추정, 직전 유효 속도보다 올랐으면 확정. 도킹 카운터 변화는 이탈 후보가 모호하지 않을 때만 도킹을 확정한다.
@@ -504,6 +553,9 @@ public sealed class Analyzer(CctvStore store)
             var details = Obj(("distance", row.Distance), ("reason", reason));
             if (type == "warp_out") Merge(details, ("verification", warpConfirmed ? "confirmed" : "estimated"), ("previousSpeed", row.PreviousSpeed), ("lastSpeed", row.Speed));
             if (dockPending != null) Merge(details, ("dockPending", dockPending), ("dockFrames", 0));
+            CopyEntryEvidence(details, row.EntryEventId, includeDock: false);   // 입장(언독 · 워프인) 때의 오버뷰 프레임부터
+            AddEvidence(details, row.LastImageId, Finite(row.Speed) ? $"마지막으로 보임 (속도 {row.Speed:N0} m/s)" : "마지막으로 보임");
+            AddEvidence(details, image.Id, "오버뷰 이탈 감지");
             InsertEvent(new EventDraft
             {
                 // 현재 프레임이 '사라짐'을 확인한 시점이다. 비교할 이전 그림은 그 대상이 마지막으로 보인 프레임(흐린 프레임을 건너뛰었다면 몇 프레임 전일 수 있다).
