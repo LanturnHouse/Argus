@@ -56,6 +56,7 @@ public sealed class CombatLogModule : IArgusModule, IDashboardContributor
 
     public IReadOnlyList<DashboardChip> SummaryChips()
     {
+        if (_service is { CombatMode: false }) return [new("비전투 모드", ChipTone.Neutral, "전투 로그를 읽지 않습니다. 사이드바에서 전투 모드로 바꿀 수 있습니다")];
         var n = _service?.TrackedCount ?? 0;
         return [n > 0 ? new($"전투 로그 {n}개 읽는 중", ChipTone.Good, "실행 중인 클라이언트의 전투 로그를 읽고 있습니다") : new("전투 로그 대기 중", ChipTone.Neutral, "읽을 로그가 아직 없습니다")];
     }

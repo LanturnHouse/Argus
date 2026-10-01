@@ -3,6 +3,7 @@ using System.Windows.Threading;
 using Argus.Core.Clients;
 using Argus.Core.Events;
 using Argus.Core.Modules;
+using Argus.Core.Settings;
 using Argus.Modules.Preview.Native;
 
 namespace Argus.Modules.Preview;
@@ -18,7 +19,8 @@ public sealed partial class PreviewService : IDisposable
     private readonly HashSet<string> _loggedOut = new(StringComparer.OrdinalIgnoreCase);   // 로그아웃해서 창 제목이 "EVE" 가 됐지만 프리뷰는 남겨 둔 캐릭터
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
-    private IDisposable? _sub, _combatSub, _iconSub;
+    private IDisposable? _sub, _combatSub, _iconSub, _modeSub;
+    private bool _combatMode;   // 비전투 모드에서는 전투 수치·태클·레드박싱을 보여 주지 않는다
 
     // 전투 로그 모듈이 알려주는 캐릭터별 수치 (HUD 에 그린다)
     private readonly Dictionary<string, CombatSnapshot> _combat = new(StringComparer.OrdinalIgnoreCase);
@@ -68,11 +70,13 @@ public sealed partial class PreviewService : IDisposable
 
     public void Start()
     {
+        _combatMode = CombatMode.Load(_ctx.Settings);
         EvaluateFocus(immediate: true);   // 시작 직후 깜빡이지 않도록 처음부터 현재 상태를 반영
         Sync(_ctx.Clients.Current);
         _sub = _ctx.Events.Subscribe<ClientsChanged>(e => _ui.BeginInvoke(() => Sync(e.Clients)));
         _combatSub = _ctx.Events.Subscribe<CombatStatsUpdated>(e => _ui.BeginInvoke(() => OnCombat(e)));
         _iconSub = _ctx.Events.Subscribe<TackleIconsUpdated>(e => _ui.BeginInvoke(() => OnIcons(e)));
+        _modeSub = _ctx.Events.Subscribe<CombatModeChanged>(e => _ui.BeginInvoke(() => OnCombatMode(e.Active)));
         _tick.Start();
     }
 
@@ -246,8 +250,20 @@ public sealed partial class PreviewService : IDisposable
 
     // ---------- 전투 HUD ----------
 
+    /// <summary>전투 모드가 바뀌었다. 비전투로 가면 지금 보이는 수치·태클·레드박싱을 바로 지운다.</summary>
+    private void OnCombatMode(bool active)
+    {
+        if (_combatMode == active) return;
+        _combatMode = active;
+        if (active) return;
+        _combat.Clear(); _icons.Clear();
+        foreach (var t in _tiles.Values) ApplyCombat(t);
+        RefreshSurge(force: true);
+    }
+
     private void OnCombat(CombatStatsUpdated e)
     {
+        if (!_combatMode) return;
         _combat.Clear();
         foreach (var s in e.Snapshots) _combat[s.Character] = s;
         _combatAt = Environment.TickCount64;
@@ -257,6 +273,7 @@ public sealed partial class PreviewService : IDisposable
 
     private void OnIcons(TackleIconsUpdated e)
     {
+        if (!_combatMode) return;
         var now = Environment.TickCount64;
         foreach (var s in e.States)
         {
@@ -563,6 +580,7 @@ public sealed partial class PreviewService : IDisposable
         _sub?.Dispose();
         _combatSub?.Dispose();
         _iconSub?.Dispose();
+        _modeSub?.Dispose();
         Save();
         foreach (var t in _tiles.Values) t.Dispose();
         _tiles.Clear();

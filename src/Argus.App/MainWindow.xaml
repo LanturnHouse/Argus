@@ -26,6 +26,20 @@
                     </StackPanel>
                 </Border>
 
+                <!-- 전투 / 비전투 모드: 비전투에서는 전투 로그 · 태클 감지 · 프리뷰 수치 · 레드박싱을 멈춰 리소스를 아낀다 -->
+                <Border DockPanel.Dock="Bottom" Style="{StaticResource Card}" Padding="12,10" CornerRadius="10" Background="{StaticResource Surface2}" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="모드" Style="{StaticResource Dim}"/>
+                        <Border Style="{StaticResource SegmentBar}" Margin="0,6,0,0" HorizontalAlignment="Stretch">
+                            <UniformGrid Rows="1">
+                                <RadioButton x:Name="ModeCombat" GroupName="mode" Content="전투" Style="{StaticResource Segment}" Checked="Mode_Checked"/>
+                                <RadioButton x:Name="ModeIdle" GroupName="mode" Content="비전투" Style="{StaticResource Segment}" Checked="Mode_Checked"/>
+                            </UniformGrid>
+                        </Border>
+                        <TextBlock x:Name="ModeNote" Style="{StaticResource Dim}" FontSize="11.5" TextWrapping="Wrap" Margin="2,6,0,0"/>
+                    </StackPanel>
+                </Border>
+
                 <ListBox x:Name="Nav" SelectionChanged="Nav_SelectionChanged">
                     <ListBox.ItemTemplate>
                         <DataTemplate>

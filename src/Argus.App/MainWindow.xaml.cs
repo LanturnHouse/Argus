@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using Argus.Core.Clients;
 using Argus.Core.Dashboard;
+using Argus.Core.Settings;
 using Argus.Ui;
 
 namespace Argus.App;
@@ -32,6 +33,11 @@ public partial class MainWindow : Window
         Nav.ItemsSource = items;
         Nav.SelectedIndex = items.Count > 1 ? 1 : 0; // 캡처 화면을 기본으로
 
+        _modeReady = false;
+        (CombatMode.Load(app.Settings) ? ModeCombat : ModeIdle).IsChecked = true;
+        ShowModeNote();
+        _modeReady = true;
+
         UpdateClients(app.Registry.Current);
         app.Bus.Subscribe<ClientsChanged>(e => Dispatcher.Invoke(() => UpdateClients(e.Clients)));
 
@@ -43,6 +49,21 @@ public partial class MainWindow : Window
             DwmSetWindowAttribute(hwnd, 20, ref on, sizeof(int));
         };
     }
+
+    private bool _modeReady;
+
+    /// <summary>전투 / 비전투 모드를 바꾼다: 저장하고 전투 로그 · 상태이상 인식 · 프리뷰가 따르도록 알린다.</summary>
+    private void Mode_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_modeReady) return;
+        var app = (App)Application.Current;
+        CombatMode.Set(app.Settings, app.Bus, ModeCombat.IsChecked == true);
+        ShowModeNote();
+    }
+
+    private void ShowModeNote() => ModeNote.Text = ModeCombat.IsChecked == true
+        ? "전투 로그 · 태클 · 레드박싱 작동 중"
+        : "전투 기능 정지 (리소스 절약)";
 
     private void UpdateClients(IReadOnlyList<EveClient> clients) => ClientCount.Text = clients.Count.ToString();
 

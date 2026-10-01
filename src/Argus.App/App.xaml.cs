@@ -12,6 +12,7 @@ public partial class App : Application
     public ModuleHost Host { get; private set; } = null!;
     public ClientRegistry Registry { get; private set; } = null!;
     public IEventBus Bus { get; private set; } = null!;
+    public ISettingsStore Settings { get; private set; } = null!;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -19,7 +20,8 @@ public partial class App : Application
         var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Argus");
         Bus = new EventBus();
         Registry = new ClientRegistry(Bus);
-        var ctx = new ModuleContext(Registry, Bus, new JsonSettingsStore(Path.Combine(root, "settings")), Path.Combine(root, "data"));
+        Settings = new JsonSettingsStore(Path.Combine(root, "settings"));
+        var ctx = new ModuleContext(Registry, Bus, Settings, Path.Combine(root, "data"));
 
         Host = new ModuleHost(ctx);
         // 모듈 추가/삭제는 이 목록만 고치면 된다.

@@ -5,6 +5,7 @@ using System.Windows.Media.Imaging;
 using Argus.Core.Clients;
 using Argus.Core.Events;
 using Argus.Core.Modules;
+using Argus.Core.Settings;
 using Argus.Modules.Capture.Native;
 
 namespace Argus.Modules.Capture.StatusIcons;
@@ -49,8 +50,11 @@ public sealed class StatusIconService : IDisposable
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
     private CancellationTokenSource? _cts;
+    private IDisposable? _modeSub;
+    private volatile bool _combatMode;   // 비전투 모드에서는 화면을 읽지 않는다 (캡처 세션도 닫는다)
 
     internal StatusIconSettings Settings { get; }
+    internal bool CombatMode => _combatMode;
 
     public StatusIconService(IModuleContext ctx)
     {
@@ -58,18 +62,21 @@ public sealed class StatusIconService : IDisposable
         Settings = ctx.Settings.Load<StatusIconSettings>(SettingsKey);
         Settings.Normalize();
         _detector = new IconDetector(LoadReferences());
+        _combatMode = Core.Settings.CombatMode.Load(ctx.Settings);
     }
 
     public void Start()
     {
         _cts = new CancellationTokenSource();
         var ct = _cts.Token;
+        _modeSub = _ctx.Events.Subscribe<CombatModeChanged>(e => _combatMode = e.Active);
         _ = Task.Run(() => LoopAsync(ct));
     }
 
     public void Dispose()
     {
         _cts?.Cancel();
+        _modeSub?.Dispose();
         lock (_lock)
         {
             foreach (var e in _entries.Values) e.Session?.Dispose();
@@ -99,13 +106,24 @@ public sealed class StatusIconService : IDisposable
             try { Tick(); }
             catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[StatusIcons] {ex.Message}"); }
 
-            try { await Task.Delay(1000 / Math.Clamp(Settings.Hz, StatusIconSettings.MinHz, StatusIconSettings.MaxHz), ct); }
+            try { await Task.Delay(_combatMode ? 1000 / Math.Clamp(Settings.Hz, StatusIconSettings.MinHz, StatusIconSettings.MaxHz) : 500, ct); }
             catch (OperationCanceledException) { break; }
         }
     }
 
     private void Tick()
     {
+        if (!_combatMode)
+        {
+            // 비전투 모드: 열어 둔 캡처 세션을 모두 닫고 아무것도 읽지 않는다.
+            lock (_lock)
+                foreach (var e in _entries.Values)
+                {
+                    e.Session?.Dispose(); e.Session = null;
+                    e.Probe = new("비전투 모드 (읽지 않음)", null, [], null);
+                }
+            return;
+        }
         SyncClients();
         var states = new List<TackleIconState>();
 

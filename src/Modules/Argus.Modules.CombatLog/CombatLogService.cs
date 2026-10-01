@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Argus.Core.Clients;
 using Argus.Core.Events;
 using Argus.Core.Modules;
+using Argus.Core.Settings;
 
 namespace Argus.Modules.CombatLog;
 
@@ -30,9 +31,13 @@ public sealed class CombatLogService : IDisposable
     private readonly Dictionary<string, CombatSnapshot> _latest = new(StringComparer.OrdinalIgnoreCase);   // 대시보드가 읽는 가장 최근 수치
     private long _lastRescan, _lastPublish;
     private bool _rescanNow = true;
-    private IDisposable? _sub;
+    private IDisposable? _sub, _modeSub;
+    private volatile bool _combatMode;   // 비전투 모드에서는 로그를 읽지 않는다
 
     public CombatLogSettings Settings { get; }
+
+    /// <summary>전투 모드인지 (아니면 로그를 읽지 않는다).</summary>
+    public bool CombatMode => _combatMode;
 
     /// <summary>이 캐릭터의 가장 최근 수치 (읽고 있지 않으면 null).</summary>
     public CombatSnapshot? Latest(string character) { lock (_lock) return _latest.GetValueOrDefault(character); }
@@ -53,6 +58,7 @@ public sealed class CombatLogService : IDisposable
         _ctx = ctx;
         Settings = ctx.Settings.Load<CombatLogSettings>(SettingsKey);
         Clamp();
+        _combatMode = Core.Settings.CombatMode.Load(ctx.Settings);
     }
 
     private void Clamp()
@@ -69,7 +75,25 @@ public sealed class CombatLogService : IDisposable
     public void Start()
     {
         _sub = _ctx.Events.Subscribe<ClientsChanged>(_ => _rescanNow = true);
+        _modeSub = _ctx.Events.Subscribe<CombatModeChanged>(e => SetCombatMode(e.Active));
         _ = Task.Run(LoopAsync);
+    }
+
+    /// <summary>
+    /// 전투 모드를 바꾼다. 끄면 읽던 로그를 모두 놓고 수치를 비운다(프리뷰가 바로 지우도록 빈 목록을 알린다).
+    /// 켜면 지금 시점부터 읽기 시작한다 (그 전의 전투는 건너뛴다).
+    /// </summary>
+    internal void SetCombatMode(bool active)
+    {
+        lock (_lock)
+        {
+            if (_combatMode == active) return;
+            _combatMode = active;
+            if (active) { _rescanNow = true; return; }
+            foreach (var t in _tracked.Values) t.Tailer.Dispose();
+            _tracked.Clear(); _latest.Clear();
+        }
+        _ctx.Events.Publish(new CombatStatsUpdated([]));
     }
 
     // ---------- 설정 ----------
@@ -115,8 +139,10 @@ public sealed class CombatLogService : IDisposable
 
     internal void Tick(long now)
     {
+        if (!_combatMode) return;
         lock (_lock)
         {
+            if (!_combatMode) return;
             if (_rescanNow || now - _lastRescan >= RescanMs) { _rescanNow = false; _lastRescan = now; Retarget(now); }
 
             foreach (var t in _tracked.Values)
@@ -238,6 +264,7 @@ public sealed class CombatLogService : IDisposable
     {
         _cts.Cancel();
         _sub?.Dispose();
+        _modeSub?.Dispose();
         lock (_lock) DropAll();
     }
 }
