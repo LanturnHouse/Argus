@@ -250,7 +250,6 @@ public partial class PreviewView : UserControl
         Item("받는 LOGI  ✚", HudElement.Logi, layout.HudLogi);
         Item("받는 뉴트 (노스·캡 전송 반영)  ⚡", HudElement.Neut, layout.HudNeut);
         menu.Items.Add(new Separator());
-        Item("태클 (디스럽트 · 스크램블 · HIC)", HudElement.Tackle, layout.HudTackle);
         Item("레드박싱 경고 (붉은 깜빡임 · 전환 키 안내)", HudElement.Surge, layout.HudSurge);
         menu.IsOpen = true;
     }

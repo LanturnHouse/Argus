@@ -27,7 +27,7 @@ public sealed record TestRampSpec(bool DpsIn, bool Logi, bool Neut, double Initi
 }
 
 /// <summary>
-/// 기능 시험(설정 > 프리뷰 > 기능 테스트): 실제 전투 없이 프리뷰 HUD 의 레드박싱 · 태클 리본 · 수치를 시험한다.
+/// 기능 시험(설정 > 프리뷰 > 기능 테스트): 실제 전투 없이 프리뷰 HUD 의 레드박싱 · 수치를 시험한다.
 /// 시험 값은 실제 전투 로그 값 위에 겹쳐서 적용되고(시험이 우선), 끝나면 저절로 실제 값으로 돌아간다.
 /// 레드박싱 시험은 진짜 레드박싱과 똑같이 레드박싱 전환 단축키도 켠다.
 /// </summary>
@@ -36,8 +36,6 @@ public sealed partial class PreviewService
     private sealed class FeatureTest
     {
         public long SurgeAt = long.MinValue;
-        public long TackleUntil;
-        public bool Hic, Scram, Disrupt;
         public TestRampSpec? Ramp;
         public long RampStart;
         // 수치 시험 중 받는 DPS 가 급히 오르면 실제와 같은 규칙으로 레드박싱이 감지되게 하는 시뮬레이션
@@ -85,19 +83,6 @@ public sealed partial class PreviewService
     {
         var now = Environment.TickCount64;
         foreach (var c in Targets(character)) Test(c).SurgeAt = now;
-        ApplyFeatureTests();
-    }
-
-    /// <summary>태클 리본을 seconds 초 동안 보여준다.</summary>
-    public void TestTackle(string? character, bool hic, bool scram, bool disrupt, int seconds)
-    {
-        var until = Environment.TickCount64 + Math.Max(1, seconds) * 1000L;
-        foreach (var c in Targets(character))
-        {
-            var t = Test(c);
-            t.TackleUntil = until;
-            t.Hic = hic; t.Scram = scram; t.Disrupt = disrupt;
-        }
         ApplyFeatureTests();
     }
 
@@ -152,19 +137,6 @@ public sealed partial class PreviewService
         return s;
     }
 
-    /// <summary>
-    /// 이 클라이언트에 지금 걸려 있는 태클: 화면의 상태이상 아이콘에서 읽은 값(읽기가 끊겼으면 없음)에 기능 테스트의 리본을 더한다.
-    /// 아이콘이 떠 있는 동안 켜져 있고 풀리면 바로 꺼진다.
-    /// </summary>
-    private TackleFlags TackleFor(string character)
-    {
-        var now = Environment.TickCount64;
-        var real = _icons.TryGetValue(character, out var ic) && now - ic.At <= IconStaleMs ? new TackleFlags(ic.State.Hic, ic.State.Scram, ic.State.Disrupt) : default;
-        if (_featureTests.TryGetValue(character, out var t) && now < t.TackleUntil)
-            return new TackleFlags(real.Hic || t.Hic, real.Scram || t.Scram, real.Disrupt || t.Disrupt);
-        return real;
-    }
-
     /// <summary>주기 작업: 진행 중인 수치 시험을 화면에 반영하고, 끝난 시험은 치워서 실제 값으로 돌아가게 한다.</summary>
     private void TickFeatureTests()
     {
@@ -183,9 +155,8 @@ public sealed partial class PreviewService
                 if (t.Sim.SurgeAt > t.SurgeAt) t.SurgeAt = t.Sim.SurgeAt;
             }
             if (t.Ramp is { } r && (now - t.RampStart) / 1000.0 >= r.TotalSeconds) t.Ramp = null;
-            var tackling = now < t.TackleUntil;
             var surging = t.SurgeAt != long.MinValue && now - t.SurgeAt <= keep;
-            if (t.Ramp == null && !tackling && !surging) _featureTests.Remove(name);
+            if (t.Ramp == null && !surging) _featureTests.Remove(name);
         }
         foreach (var tile in _tiles.Values) ApplyCombat(tile);
     }

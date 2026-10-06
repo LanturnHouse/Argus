@@ -15,7 +15,7 @@ public readonly record struct CombatEvent(CombatKind Kind, double Amount);
 /// <summary>
 /// EVE 전투 로그(Gamelogs) 한 줄을 해석한다. 로그는 클라이언트 언어로 기록되므로 언어별 문구표를 쓴다.
 /// 한국어는 이 PC 의 실제 로그로 검증했다. 영어는 알려진 형식에 맞춘 것이라 실제 영어 로그로는 확인하지 못했다.
-/// 태클(스크램블·디스럽터·HIC)은 로그에 걸린 순간 한 줄만 남고 유지·해제는 기록되지 않아서 다루지 않는다 — 화면의 상태이상 아이콘에서 읽는다. 버블도 로그에 남지 않는다. 내가 입히는 피해는 HUD 에 쓰지 않아 읽지 않는다.
+/// 태클(스크램블·디스럽터·HIC)은 로그에 걸린 순간 한 줄만 남고 유지·해제는 기록되지 않아서 다루지 않는다. 버블도 로그에 남지 않는다. 내가 입히는 피해는 HUD 에 쓰지 않아 읽지 않는다.
 /// </summary>
 public static class CombatLogParser
 {

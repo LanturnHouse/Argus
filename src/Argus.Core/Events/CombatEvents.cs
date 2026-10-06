@@ -1,6 +1,6 @@
 namespace Argus.Core.Events;
 
-/// <summary>한 캐릭터의 최근 전투 수치. 수치는 초당 값(최근 N초 평균). 태클 상태는 여기 없다 (화면의 상태이상 아이콘에서 읽어 <see cref="TackleIconsUpdated"/> 로 따로 온다).</summary>
+/// <summary>한 캐릭터의 최근 전투 수치. 수치는 초당 값(최근 N초 평균).</summary>
 /// <param name="DpsIn">내가 받는 피해 (초당)</param>
 /// <param name="LogiIn">내가 받는 원격 수리·실드 충전 (초당 HP)</param>
 /// <param name="NeutIn">내가 받는 에너지 뉴트럴라이즈 (초당 GJ)</param>

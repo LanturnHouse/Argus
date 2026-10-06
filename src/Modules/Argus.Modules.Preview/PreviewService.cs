@@ -19,17 +19,13 @@ public sealed partial class PreviewService : IDisposable
     private readonly HashSet<string> _loggedOut = new(StringComparer.OrdinalIgnoreCase);   // 로그아웃해서 창 제목이 "EVE" 가 됐지만 프리뷰는 남겨 둔 캐릭터
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
-    private IDisposable? _sub, _combatSub, _iconSub, _modeSub;
-    private bool _combatMode;   // 비전투 모드에서는 전투 수치·태클·레드박싱을 보여 주지 않는다
+    private IDisposable? _sub, _combatSub, _modeSub;
+    private bool _combatMode;   // 비전투 모드에서는 전투 수치·레드박싱을 보여 주지 않는다
 
     // 전투 로그 모듈이 알려주는 캐릭터별 수치 (HUD 에 그린다)
     private readonly Dictionary<string, CombatSnapshot> _combat = new(StringComparer.OrdinalIgnoreCase);
     private long _combatAt;
     private const int CombatStaleMs = 3000;
-
-    // 상태이상 인식 모듈이 화면의 아이콘에서 읽은 태클 상태 (태클의 유일한 출처). 읽기가 끊기면(최소화, 모듈 끔 등) 1.5초 뒤에 버린다.
-    private readonly Dictionary<string, (TackleIconState State, long At)> _icons = new(StringComparer.OrdinalIgnoreCase);
-    private const int IconStaleMs = 1500;
 
     // 'EVE 를 플레이 중일 때만 표시' 규칙용 상태
     private const int HideDelayMs = 200;
@@ -75,7 +71,6 @@ public sealed partial class PreviewService : IDisposable
         Sync(_ctx.Clients.Current);
         _sub = _ctx.Events.Subscribe<ClientsChanged>(e => _ui.BeginInvoke(() => Sync(e.Clients)));
         _combatSub = _ctx.Events.Subscribe<CombatStatsUpdated>(e => _ui.BeginInvoke(() => OnCombat(e)));
-        _iconSub = _ctx.Events.Subscribe<TackleIconsUpdated>(e => _ui.BeginInvoke(() => OnIcons(e)));
         _modeSub = _ctx.Events.Subscribe<CombatModeChanged>(e => _ui.BeginInvoke(() => OnCombatMode(e.Active)));
         _tick.Start();
     }
@@ -139,8 +134,8 @@ public sealed partial class PreviewService : IDisposable
             ScheduleSave();
         }
         tile.SetVisible(ShouldShow(tile, layout), bounds);
-        tile.SetCombat(SnapshotFor(tile.Client.Character), TackleFor(tile.Client.Character), layout.Hud);
-        tile.Hud.SetOpacities(Settings.HudBarOpacity, Settings.HudRibbonOpacity);
+        tile.SetCombat(SnapshotFor(tile.Client.Character), layout.Hud);
+        tile.Hud.SetBarOpacity(Settings.HudBarOpacity);
     }
 
     private bool ShouldShow(PreviewTile tile, ClientLayout layout) =>
@@ -227,7 +222,6 @@ public sealed partial class PreviewService : IDisposable
             _combat.Clear();
             foreach (var t in _tiles.Values) ApplyCombat(t);
         }
-        ExpireIcons();
         TickFeatureTests();
         RefreshSurge();   // 색조·단축키 유지 시간이 지났는지 확인
         var fg = WindowFocus.Foreground;
@@ -250,13 +244,13 @@ public sealed partial class PreviewService : IDisposable
 
     // ---------- 전투 HUD ----------
 
-    /// <summary>전투 모드가 바뀌었다. 비전투로 가면 지금 보이는 수치·태클·레드박싱을 바로 지운다.</summary>
+    /// <summary>전투 모드가 바뀌었다. 비전투로 가면 지금 보이는 수치·레드박싱을 바로 지운다.</summary>
     private void OnCombatMode(bool active)
     {
         if (_combatMode == active) return;
         _combatMode = active;
         if (active) return;
-        _combat.Clear(); _icons.Clear();
+        _combat.Clear();
         foreach (var t in _tiles.Values) ApplyCombat(t);
         RefreshSurge(force: true);
     }
@@ -271,38 +265,12 @@ public sealed partial class PreviewService : IDisposable
         RefreshSurge();
     }
 
-    private void OnIcons(TackleIconsUpdated e)
-    {
-        if (!_combatMode) return;
-        var now = Environment.TickCount64;
-        foreach (var s in e.States)
-        {
-            var before = _icons.TryGetValue(s.Character, out var prev) && now - prev.At <= IconStaleMs ? prev.State : null;
-            _icons[s.Character] = (s, now);
-            if (before != null && before.Disrupt == s.Disrupt && before.Scram == s.Scram && before.Hic == s.Hic) continue;   // 바뀐 것만 다시 그린다
-            if (_tiles.TryGetValue(s.Character, out var tile)) ApplyCombat(tile);
-        }
-        RefreshSurge();
-    }
-
-    /// <summary>읽기가 끊긴(최소화, 모듈 중지 등) 클라이언트의 낡은 아이콘 정보를 버린다 (리본이 꺼진다).</summary>
-    private void ExpireIcons()
-    {
-        if (_icons.Count == 0) return;
-        var now = Environment.TickCount64;
-        foreach (var name in _icons.Where(kv => now - kv.Value.At > IconStaleMs).Select(kv => kv.Key).ToList())
-        {
-            _icons.Remove(name);
-            if (_tiles.TryGetValue(name, out var tile)) ApplyCombat(tile);
-        }
-    }
-
     private void ApplyCombat(PreviewTile tile)
     {
         var layout = ActivePreset.Clients.FirstOrDefault(l => string.Equals(l.Character, tile.Client.Character, StringComparison.OrdinalIgnoreCase));
         if (layout == null) return;
         var snap = SnapshotFor(tile.Client.Character);
-        tile.SetCombat(snap, TackleFor(tile.Client.Character), layout.Hud);
+        tile.SetCombat(snap, layout.Hud);
 
         // 레드박싱: 색조, 전환 키 안내, 레드박싱 전환 단축키 모두 레드박싱 후 SurgeSeconds 동안만 살아 있다.
         var hint = Settings.ShowSurgeKeyHint && SurgeActive(snap, layout) && ActivePreset.SurgeHotkey is { IsEmpty: false } key ? key.ToString() : null;
@@ -389,7 +357,6 @@ public sealed partial class PreviewService : IDisposable
             case HudElement.DpsIn: l.HudDpsIn = on; break;
             case HudElement.Logi: l.HudLogi = on; break;
             case HudElement.Neut: l.HudNeut = on; break;
-            case HudElement.Tackle: l.HudTackle = on; break;
             case HudElement.Surge: l.HudSurge = on; break;
         }
         ApplyCombat(t);
@@ -501,14 +468,12 @@ public sealed partial class PreviewService : IDisposable
     public void UpdateGlobalSettings(int? defaultWidth = null, double? opacity = null, bool? hideActive = null, bool? onlyWhenEveActive = null,
         bool? hotkeysEnabled = null, bool? hotkeysOnlyWhenEveActive = null, bool? hotkeysAllowExtraMods = null,
         int? surgeSeconds = null, int? surgeFlashMs = null, bool? showSurgeKeyHint = null,
-        double? hudBarOpacity = null, double? hudRibbonOpacity = null)
+        double? hudBarOpacity = null)
     {
         if (defaultWidth is { } w) Settings.DefaultWidth = Math.Clamp(w, TileGeometry.MinWidth, TileGeometry.MaxWidth);
         if (opacity is { } o) { Settings.Opacity = Math.Clamp(o, 0.3, 1.0); foreach (var t in _tiles.Values) t.ApplyOpacity(); }
         if (hideActive is { } h) { Settings.HideActive = h; foreach (var t in _tiles.Values) ApplyLayout(t); }
-        if (hudBarOpacity is { } bo) Settings.HudBarOpacity = Math.Clamp(bo, 0.2, 1.0);
-        if (hudRibbonOpacity is { } ro) Settings.HudRibbonOpacity = Math.Clamp(ro, 0.2, 1.0);
-        if (hudBarOpacity != null || hudRibbonOpacity != null) foreach (var t in _tiles.Values) t.Hud.SetOpacities(Settings.HudBarOpacity, Settings.HudRibbonOpacity);
+        if (hudBarOpacity is { } bo) { Settings.HudBarOpacity = Math.Clamp(bo, 0.2, 1.0); foreach (var t in _tiles.Values) t.Hud.SetBarOpacity(Settings.HudBarOpacity); }
         var surgeChanged = surgeSeconds != null || surgeFlashMs != null || showSurgeKeyHint != null;
         if (surgeSeconds is { } ss) Settings.SurgeSeconds = Math.Clamp(ss, 2, 60);
         if (surgeFlashMs is { } sf) Settings.SurgeFlashMs = Math.Clamp(sf, 200, 2000);
@@ -537,7 +502,7 @@ public sealed partial class PreviewService : IDisposable
         var preset = new LayoutPreset
         {
             Name = name.Trim(),
-            Clients = [.. ActivePreset.Clients.Select(l => new ClientLayout { Character = l.Character, X = l.X, Y = l.Y, W = l.W, H = l.H, Visible = l.Visible, InCycle = l.InCycle, Hotkey = l.Hotkey?.Clone(), HudDpsIn = l.HudDpsIn, HudLogi = l.HudLogi, HudNeut = l.HudNeut, HudTackle = l.HudTackle, HudSurge = l.HudSurge })],
+            Clients = [.. ActivePreset.Clients.Select(l => new ClientLayout { Character = l.Character, X = l.X, Y = l.Y, W = l.W, H = l.H, Visible = l.Visible, InCycle = l.InCycle, Hotkey = l.Hotkey?.Clone(), HudDpsIn = l.HudDpsIn, HudLogi = l.HudLogi, HudNeut = l.HudNeut, HudSurge = l.HudSurge })],
             CycleNext = ActivePreset.CycleNext?.Clone(),
             CyclePrev = ActivePreset.CyclePrev?.Clone(),
             SurgeHotkey = ActivePreset.SurgeHotkey?.Clone(),
@@ -579,7 +544,6 @@ public sealed partial class PreviewService : IDisposable
         _tick.Stop();
         _sub?.Dispose();
         _combatSub?.Dispose();
-        _iconSub?.Dispose();
         _modeSub?.Dispose();
         Save();
         foreach (var t in _tiles.Values) t.Dispose();

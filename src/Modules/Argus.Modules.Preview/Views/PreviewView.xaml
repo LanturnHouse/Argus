@@ -225,9 +225,9 @@
                                             <Button Content="&#xE711;" FontFamily="{DynamicResource IconFont}" Tag="{Binding Character}" Click="HotkeyClear_Click" ToolTip="단축키 지우기"
                                                     Width="28" Padding="0,5" Margin="0,0,14,0" IsEnabled="{Binding HasHotkey}"/>
 
-                                            <!-- 이 프리뷰 위에 그릴 전투 HUD(수치·태클) 고르기 -->
+                                            <!-- 이 프리뷰 위에 그릴 전투 HUD(수치·레드박싱) 고르기 -->
                                             <Button Content="HUD" Tag="{Binding Character}" Click="Hud_Click" Width="58" Padding="0,5" Margin="0,0,6,0"
-                                                    ToolTip="이 프리뷰 위에 표시할 전투 수치·태클을 고릅니다"/>
+                                                    ToolTip="이 프리뷰 위에 표시할 전투 수치·레드박싱 경고를 고릅니다"/>
 
                                             <!-- 사이클 포함 / 표시: 켜면 밝게, 끄면 흐리게 -->
                                             <Button Content="사이클" Style="{StaticResource CycleButton}" Tag="{Binding Character}" Click="InCycle_Click" Margin="0,0,6,0"

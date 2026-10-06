@@ -10,8 +10,7 @@ namespace Argus.Modules.Preview;
 /// <summary>
 /// 프리뷰 위에 겹쳐 그리는 HUD (투명·클릭 통과 창의 내용). 기준 크기 210px 폭으로 그린 뒤 프리뷰 크기에 맞춰 늘려서
 /// 타일이 커지거나 작아져도 같은 비율로 보인다. (A+ 시안: 안쪽 검은 경계선, 이름 라벨 뒤판, 활성 = 흰 이중 테두리)
-/// 그 위에 하단 수치 바(받는 DPS · 받는 LOGI · 받는 뉴트)와 오른쪽 위 대각 태클 리본(HIC · SCRAM · DISRUPT)이 층으로 얹힌다.
-/// 레드박싱 색조는 이후 단계에서 추가된다 (리본은 항상 그 위에 그린다).
+/// 그 위에 하단 수치 바(받는 DPS · 받는 LOGI · 받는 뉴트)와 레드박싱 색조가 층으로 얹힌다.
 /// </summary>
 internal sealed class HudView : Grid
 {
@@ -24,7 +23,6 @@ internal sealed class HudView : Grid
     private static readonly Brush ColorIn = Frozen(0xFF, 0xB4, 0x54), ColorLogi = Frozen(0x9B, 0xE7, 0xC4), ColorNeut = Frozen(0xD6, 0xA8, 0xFF);
     // 받는 뉴트는 부호로 색을 나눈다: 캡이 빠지면(-) 빨강, 내가 빤 양이 더 많아 늘어나면(+) 파랑, 0 이면 기본색
     private static readonly Brush ColorNeutDrain = Frozen(0xFF, 0x5C, 0x5C), ColorNeutGain = Frozen(0x5C, 0xB8, 0xFF);
-    private static readonly Brush RibbonHic = Frozen(0xE5, 0x48, 0x4D), RibbonScram = Frozen(0x2F, 0x7B, 0xFF), RibbonDisrupt = Frozen(0x2F, 0xBF, 0x5B);
     private static Brush Frozen(byte r, byte g, byte b) { var br = new SolidColorBrush(Color.FromRgb(r, g, b)); br.Freeze(); return br; }
 
     private readonly Grid _canvas = new() { Width = DesignWidth, Height = 118, ClipToBounds = true };
@@ -34,7 +32,6 @@ internal sealed class HudView : Grid
         Height = 27, Padding = new Thickness(0, 0, 0, 5), VerticalAlignment = VerticalAlignment.Bottom, Visibility = Visibility.Collapsed,
         Background = new LinearGradientBrush(Color.FromArgb(0xB8, 0, 0, 0), Color.FromArgb(0xEB, 0, 0, 0), 90),
     };
-    private readonly Grid _ribbons = new() { Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 3, ShadowDepth = 1, Opacity = 0.6 } };   // 그림자는 리본 묶음에 한 번만 (리본 사이에 어두운 선이 생기지 않게)
 
     // 레드박싱: 붉은 색조(깜빡임)와 '이 키로 이동' 안내
     private readonly Border _tint = new()
@@ -76,7 +73,6 @@ internal sealed class HudView : Grid
         _canvas.Children.Add(_minimized);
         _canvas.Children.Add(edge);
         _canvas.Children.Add(_tint);
-        _canvas.Children.Add(_ribbons);   // 리본은 뒤쪽: 색조 위(색조가 리본 색을 바꾸지 않게), 이름 라벨과 하단 수치 아래(리본에 가려지지 않게)
         _canvas.Children.Add(label);
         _canvas.Children.Add(_bar);
         _canvas.Children.Add(_surgeKey);
@@ -124,8 +120,8 @@ internal sealed class HudView : Grid
         _surgeKey.Visibility = string.IsNullOrEmpty(keyHint) ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    /// <summary>전투 수치와 태클 리본을 갱신한다. 수치는 snapshot 이 null 이면(전투 로그를 못 읽는 중) 그리지 않고, 태클 리본은 수치와 별개로 그린다.</summary>
-    public void SetCombat(CombatSnapshot? s, TackleFlags tackle, HudFlags flags)
+    /// <summary>전투 수치를 갱신한다. snapshot 이 null 이면(전투 로그를 못 읽는 중) 그리지 않는다.</summary>
+    public void SetCombat(CombatSnapshot? s, HudFlags flags)
     {
         // 하단 수치 바: 켜 둔 항목만 같은 폭으로 나눠 그린다
         var cells = new List<UIElement>();
@@ -143,14 +139,6 @@ internal sealed class HudView : Grid
             _bar.Child = grid;
             _bar.Visibility = Visibility.Visible;
         }
-
-        // 오른쪽 위 대각 리본: HIC → 스크램블 → 디스럽터 순으로 모서리에서 안쪽으로 겹치지 않게 쌓는다. 색만으로 구분하지 않도록 글자도 함께 적는다.
-        _ribbons.Children.Clear();
-        if (!flags.Tackle) return;
-        var index = 0;
-        if (tackle.Hic) AddRibbon("HIC", RibbonHic, index++);
-        if (tackle.Scram) AddRibbon("SCRAM", RibbonScram, index++);
-        if (tackle.Disrupt) AddRibbon("DISRUPT", RibbonDisrupt, index++);
     }
 
     internal static Brush NeutColor(double v) => Math.Round(v) > 0 ? ColorNeutDrain : Math.Round(v) < 0 ? ColorNeutGain : ColorNeut;
@@ -163,24 +151,6 @@ internal sealed class HudView : Grid
         // 값이 0 이면 흐리게 (수치가 없다는 것이 한눈에 보이게)
         var border = new Border { Child = sp, Opacity = Math.Abs(Math.Round(value)) <= 0 ? 0.35 : 1, BorderBrush = new SolidColorBrush(Color.FromArgb(0x14, 255, 255, 255)), BorderThickness = new Thickness(1, 0, 0, 0) };
         return border;
-    }
-
-    private void AddRibbon(string text, Brush color, int index)
-    {
-        // 시안: 45도 대각 리본. 리본 높이 = 16, 다음 리본은 대각선에 수직으로 정확히 그 높이만큼 안쪽으로 밀어서 틈 없이 붙인다.
-        // 길이는 타일보다 훨씬 길게(300) 만들어 양 끝이 화면 가장자리에서 잘리게 한다 (안쪽 리본이 짧아 끝이 잘려 보이던 문제).
-        const double height = 16, length = 300, step = height / 1.41421356;   // 수직 간격 height 를 x, y 이동량으로 (÷√2)
-        const double centerRight = 26;   // 첫 리본의 중심이 컨테이너 오른쪽 끝에서 안쪽으로 26px
-        var ribbon = new Border
-        {
-            Width = length, Height = height, Background = color,
-            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
-            // 중심 위치를 고정한 채 길이만 늘린다: 오른쪽 여백 = centerRight - length / 2, 안쪽으로 갈수록 (왼쪽 아래로) step 씩
-            Margin = new Thickness(0, 14 + step * index, centerRight - length / 2 + step * index, 0),
-            RenderTransformOrigin = new Point(0.5, 0.5), RenderTransform = new RotateTransform(45),
-            Child = new TextBlock { Text = text, FontSize = 10, FontWeight = FontWeights.ExtraBold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-        };
-        _ribbons.Children.Add(ribbon);
     }
 
     /// <summary>수치를 천 단위 쉼표가 있는 숫자로 표시한다 (예: 3,000). 음수(노스로 빤 양이 더 많아 캡이 늘어남)는 + 로.</summary>
@@ -201,29 +171,22 @@ internal sealed class HudView : Grid
         return "0";
     }
 
-    /// <summary>하단 수치 바와 태클 리본의 투명도 (0.2 ~ 1).</summary>
-    public void SetOpacities(double bar, double ribbon)
-    {
-        _bar.Opacity = bar;
-        _ribbons.Opacity = ribbon;
-    }
+    /// <summary>하단 수치 바의 투명도 (0.2 ~ 1).</summary>
+    public void SetBarOpacity(double bar) => _bar.Opacity = bar;
 
     // 시험용: 지금 화면에 무엇이 그려져 있는지
     internal bool TintVisible => _tint.Visibility == Visibility.Visible;
     internal string? SurgeKeyShown => _surgeKey.Visibility == Visibility.Visible ? _surgeKeyText.Text : null;
     internal int FlashMs => _flashMs;
     internal double SurgeKeyFontSize => _surgeKeyText.FontSize;
-    /// <summary>하단 바의 각 칸에 지금 적힌 수치 글자 (왼쪽부터).</summary>
     /// <summary>수치 칸의 글자색 (시험용).</summary>
     internal List<Brush> CellBrushes() => _bar.Child is UniformGrid g
         ? [.. g.Children.OfType<Border>().Select(b => ((TextBlock)((StackPanel)b.Child).Children[1]).Foreground)]
         : [];
+    /// <summary>하단 바의 각 칸에 지금 적힌 수치 글자 (왼쪽부터).</summary>
     internal List<string> CellTexts() => _bar.Child is UniformGrid g
         ? [.. g.Children.OfType<Border>().Select(b => ((StackPanel)b.Child).Children.OfType<TextBlock>().Last().Text)] : [];
-    /// <summary>지금 그려진 리본 글자 (모서리에서 안쪽 순서).</summary>
-    internal List<string> RibbonTexts() => [.. _ribbons.Children.OfType<Border>().Select(b => ((TextBlock)b.Child).Text)];
     internal double BarOpacity => _bar.Opacity;
-    internal double RibbonOpacity => _ribbons.Opacity;
     internal double BarHeight => _bar.Height;
 
     /// <summary>타일의 가로/세로 비율에 맞춰 기준 캔버스 높이를 정한다.</summary>

@@ -20,23 +20,16 @@ public sealed class ClientLayout
     public bool HudDpsIn { get; set; } = true;
     public bool HudLogi { get; set; } = true;
     public bool HudNeut { get; set; } = true;
-    public bool HudTackle { get; set; } = true;
     /// <summary>레드박싱 경고(붉은 깜빡임, 전환 단축키 안내, 레드박싱 전환 대상 포함).</summary>
     public bool HudSurge { get; set; } = true;
 
-    public HudFlags Hud => new(HudDpsIn, HudLogi, HudNeut, HudTackle, HudSurge);
+    public HudFlags Hud => new(HudDpsIn, HudLogi, HudNeut, HudSurge);
 }
 
 /// <summary>클라이언트 하나에서 켜져 있는 HUD 요소들.</summary>
-public readonly record struct HudFlags(bool DpsIn, bool Logi, bool Neut, bool Tackle, bool Surge = true);
+public readonly record struct HudFlags(bool DpsIn, bool Logi, bool Neut, bool Surge = true);
 
-public enum HudElement { DpsIn, Logi, Neut, Tackle, Surge }
-
-/// <summary>지금 걸려 있는 태클. 화면의 상태이상 아이콘에서 읽은 값이다 (전투 로그에는 유지·해제가 남지 않는다).</summary>
-public readonly record struct TackleFlags(bool Hic, bool Scram, bool Disrupt)
-{
-    public bool Any => Hic || Scram || Disrupt;
-}
+public enum HudElement { DpsIn, Logi, Neut, Surge }
 
 /// <summary>프리뷰 배치 프리셋. 프리셋마다 클라이언트별 위치·크기·표시 여부를 따로 갖는다.</summary>
 public sealed class LayoutPreset
@@ -75,8 +68,6 @@ public sealed class PreviewSettings
     // ---- HUD 투명도 (0.2 ~ 1.0) ----
     /// <summary>하단 수치 바의 투명도.</summary>
     public double HudBarOpacity { get; set; } = 1.0;
-    /// <summary>태클 리본의 투명도.</summary>
-    public double HudRibbonOpacity { get; set; } = 1.0;
 
     // ---- 레드박싱 경고 (판정 기준은 전투 로그 설정) ----
     /// <summary>레드박싱 이벤트가 유지되는 시간(초): 붉은 색조, 전환 키 안내, 레드박싱 전환 단축키가 모두 이 시간 동안만 살아 있다.</summary>

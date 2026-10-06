@@ -3,7 +3,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Argus.Core\Argus.Core.csproj" />
     <ProjectReference Include="..\..\Argus.Ui\Argus.Ui.csproj" />
-    <EmbeddedResource Include="StatusIcons\Refs\*.png" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.*" />
     <InternalsVisibleTo Include="ArgusSmoke" />
   </ItemGroup>

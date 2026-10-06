@@ -4,20 +4,13 @@ using Argus.Ui;
 
 namespace Argus.Modules.Preview;
 
-/// <summary>설정 > 프리뷰 맨 아래 '기능 테스트': 실제 전투 없이 레드박싱 · 태클 리본 · 수치 표시를 프리뷰 HUD 에서 시험한다.</summary>
+/// <summary>설정 > 프리뷰 맨 아래 '기능 테스트': 실제 전투 없이 레드박싱 · 수치 표시를 프리뷰 HUD 에서 시험한다.</summary>
 internal sealed class FeatureTestPanel : UserControl
 {
     private const string AllClients = "전체 클라이언트";
 
     private readonly PreviewService _svc;
     private readonly ComboBox _target = new() { MinWidth = 260, HorizontalAlignment = HorizontalAlignment.Left };
-
-    // 리본
-    private readonly NumberBox _ribbonSeconds = new() { Minimum = 1, Maximum = 120, Step = 1, Decimals = 0, Unit = "초 동안 표시", Value = 5 };
-
-    private readonly CheckBox _ribHic = new() { Content = "HIC", IsChecked = true };
-    private readonly CheckBox _ribScram = new() { Content = "스크램블", IsChecked = true };
-    private readonly CheckBox _ribDisrupt = new() { Content = "디스럽트", IsChecked = true };
 
     // 수치
     private readonly CheckBox _dpsIn = new() { Content = "받는 DPS ▼", IsChecked = true };
@@ -36,7 +29,7 @@ internal sealed class FeatureTestPanel : UserControl
         Loaded += (_, _) => RefreshTargets();
 
         var root = new StackPanel();
-        var intro = new TextBlock { Text = "실제 전투 없이 프리뷰 HUD 의 레드박싱 · 태클 리본 · 수치 표시를 시험합니다. 시험 값은 실제 전투 값보다 우선하고, 끝나면 저절로 실제 값으로 돌아갑니다.", Margin = new Thickness(0, 0, 0, 8) };
+        var intro = new TextBlock { Text = "실제 전투 없이 프리뷰 HUD 의 레드박싱 · 수치 표시를 시험합니다. 시험 값은 실제 전투 값보다 우선하고, 끝나면 저절로 실제 값으로 돌아갑니다.", Margin = new Thickness(0, 0, 0, 8) };
         intro.SetResourceReference(StyleProperty, "Dim");
         root.Children.Add(intro);
         root.Children.Add(Field("테스트 대상", _target));
@@ -44,13 +37,6 @@ internal sealed class FeatureTestPanel : UserControl
         root.Children.Add(Header("레드박싱"));
         var surge = Btn("레드박싱 발생", () => _svc.TestSurge(Target()), primary: true);
         root.Children.Add(Field("레드박싱", Wrap(surge), "붉은 깜빡임, 전환 키 안내, 레드박싱 전환 단축키(지정했다면)가 실제 레드박싱처럼 동작합니다. 유지 시간은 위의 레드박싱 설정을 따릅니다."));
-
-        root.Children.Add(Header("태클 리본"));
-        var ribbons = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var c in new[] { _ribHic, _ribScram, _ribDisrupt }) { c.Margin = new Thickness(0, 0, 18, 0); ribbons.Children.Add(c); }
-        root.Children.Add(Field("시험할 리본", ribbons, "여러 개를 함께 고를 수 있습니다. 여러 개면 모서리에서 안쪽으로 HIC · SCRAM · DISRUPT 순서로 붙어서 표시됩니다."));
-        root.Children.Add(Field("표시 시간", _ribbonSeconds));
-        root.Children.Add(Field("", Wrap(Btn("리본 표시", StartRibbons, primary: true))));
 
         root.Children.Add(Header("수치"));
         var items = new StackPanel { Orientation = Orientation.Horizontal };
@@ -70,12 +56,6 @@ internal sealed class FeatureTestPanel : UserControl
         Content = root;
     }
 
-    private void StartRibbons()
-    {
-        if (_ribHic.IsChecked != true && _ribScram.IsChecked != true && _ribDisrupt.IsChecked != true) return;
-        _svc.TestTackle(Target(), _ribHic.IsChecked == true, _ribScram.IsChecked == true, _ribDisrupt.IsChecked == true, Seconds());
-    }
-
     private void StartRamp()
     {
         if (_dpsIn.IsChecked != true && _logi.IsChecked != true && _neut.IsChecked != true) return;
@@ -84,7 +64,6 @@ internal sealed class FeatureTestPanel : UserControl
     }
 
     private string? Target() => (_target.SelectedItem as ComboBoxItem)?.Tag as string;
-    private int Seconds() => (int)_ribbonSeconds.Value;
 
     private void RefreshTargets()
     {

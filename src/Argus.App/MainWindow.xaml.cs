@@ -62,7 +62,7 @@ public partial class MainWindow : Window
 
     private bool _modeReady;
 
-    /// <summary>전투 / 비전투 모드를 바꾼다: 저장하고 전투 로그 · 상태이상 인식 · 프리뷰가 따르도록 알린다.</summary>
+    /// <summary>전투 / 비전투 모드를 바꾼다: 저장하고 전투 로그 · 프리뷰가 따르도록 알린다.</summary>
     private void Mode_Checked(object sender, RoutedEventArgs e)
     {
         if (!_modeReady) return;

@@ -11,9 +11,6 @@ namespace Argus.Modules.Capture.Native;
 /// <summary>클라이언트 영역의 BGRA 프레임(stride = Width * 4).</summary>
 internal sealed record Frame(byte[] Bgra, int Width, int Height);
 
-/// <summary>클라이언트 영역의 일부만 읽은 프레임. X, Y 는 그 조각의 왼쪽 위가 클라이언트 영역에서 어디인지, ClientWidth/Height 는 클라이언트 전체 크기.</summary>
-internal sealed record RegionFrame(byte[] Bgra, int Width, int Height, int X, int Y, int ClientWidth, int ClientHeight);
-
 /// <summary>
 /// 창 하나에 대한 Windows Graphics Capture 세션. 다른 창에 가려져 있어도 캡처되며,
 /// 완전히 최소화된 창은 새 프레임이 오지 않는다.
@@ -31,7 +28,6 @@ internal sealed class WgcSession : IDisposable
     private readonly object _lock = new();
     private ID3D11Texture2D? _staging;
     private Frame? _last;
-    private RegionFrame? _lastRegion;
     private Windows.Graphics.SizeInt32 _poolSize;
 
     public bool IsMinimized => NativeMethods.IsIconic(_hwnd);
@@ -88,35 +84,6 @@ internal sealed class WgcSession : IDisposable
                 catch { /* 디바이스 리셋 등 일시적 오류: 직전 프레임 유지 */ }
             }
             return _last;
-        }
-    }
-
-    /// <summary>
-    /// 클라이언트 영역 중 필요한 조각만 읽는다 (전체 프레임을 CPU 로 가져오지 않아서 가볍다). 조각의 위치는 클라이언트 크기를 받아 정한다.
-    /// 새 프레임이 없으면 직전 결과를 그대로 돌려준다.
-    /// </summary>
-    public RegionFrame? GrabRegion(Func<int, int, (int X, int Y, int W, int H)> regionFor)
-    {
-        lock (_lock)
-        {
-            var latest = DrainLatest();
-            if (latest == null && _lastRegion == null)
-            {
-                var deadline = Environment.TickCount64 + FirstFrameTimeoutMs;
-                while (latest == null && Environment.TickCount64 < deadline)
-                {
-                    Thread.Sleep(30);
-                    latest = DrainLatest();
-                }
-            }
-            if (latest == null) return _lastRegion;
-
-            using (latest)
-            {
-                try { _lastRegion = ReadbackRegion(latest, regionFor) ?? _lastRegion; }
-                catch { /* 디바이스 리셋 등 일시적 오류: 직전 결과 유지 */ }
-            }
-            return _lastRegion;
         }
     }
 
@@ -178,54 +145,6 @@ internal sealed class WgcSession : IDisposable
             finally { ctx.Unmap(_staging, 0); }
         }
         return new Frame(bytes, cw, ch);
-    }
-
-    private RegionFrame? ReadbackRegion(Direct3D11CaptureFrame frame, Func<int, int, (int X, int Y, int W, int H)> regionFor)
-    {
-        var size = frame.ContentSize;
-        if (size.Width != _poolSize.Width || size.Height != _poolSize.Height)
-        {
-            _poolSize = size;
-            _pool.Recreate(s_winrtDevice!, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, size);
-        }
-
-        using var texture = GetTexture(frame.Surface);
-        var desc = texture.Description;
-        int texW = (int)desc.Width, texH = (int)desc.Height;
-
-        var crop = NativeMethods.GetClientCropRect(_hwnd, texW, texH);
-        var (rx, ry, rw, rh) = regionFor(crop.Width, crop.Height);
-        rx = Math.Clamp(rx, 0, crop.Width - 1); ry = Math.Clamp(ry, 0, crop.Height - 1);
-        rw = Math.Clamp(rw, 1, crop.Width - rx); rh = Math.Clamp(rh, 1, crop.Height - ry);
-        var bytes = new byte[rw * rh * 4];
-
-        lock (GpuLock)
-        {
-            var ctx = s_device!.ImmediateContext;
-            if (_staging == null || _staging.Description.Width != desc.Width || _staging.Description.Height != desc.Height)
-            {
-                _staging?.Dispose();
-                var sd = desc;
-                sd.Usage = ResourceUsage.Staging;
-                sd.BindFlags = BindFlags.None;
-                sd.CPUAccessFlags = CpuAccessFlags.Read;
-                sd.MiscFlags = ResourceOptionFlags.None;
-                _staging = s_device.CreateTexture2D(sd);
-            }
-
-            ctx.CopyResource(_staging, texture);
-            var map = ctx.Map(_staging, 0, MapMode.Read);
-            try
-            {
-                for (int y = 0; y < rh; y++)
-                {
-                    var src = map.DataPointer + (crop.Y + ry + y) * (int)map.RowPitch + (crop.X + rx) * 4;
-                    Marshal.Copy(src, bytes, y * rw * 4, rw * 4);
-                }
-            }
-            finally { ctx.Unmap(_staging, 0); }
-        }
-        return new RegionFrame(bytes, rw, rh, rx, ry, crop.Width, crop.Height);
     }
 
     public void Dispose()

@@ -19,8 +19,6 @@ internal sealed class PreviewSettingsView : UserControl
     // %로 조절하는 것은 바(슬라이더), 그 밖의 수치는 직접 입력 칸(위·아래 화살표)
     private readonly Slider _barOpacity = new() { Minimum = 20, Maximum = 100, TickFrequency = 5, IsSnapToTickEnabled = true };
     private readonly TextBlock _barOpacityText = new() { Width = 44, TextAlignment = TextAlignment.Right };
-    private readonly Slider _ribbonOpacity = new() { Minimum = 20, Maximum = 100, TickFrequency = 5, IsSnapToTickEnabled = true };
-    private readonly TextBlock _ribbonOpacityText = new() { Width = 44, TextAlignment = TextAlignment.Right };
     private readonly NumberBox _surge = new() { Minimum = 2, Maximum = 60, Step = 1, Decimals = 0, Unit = "초" };
     private readonly NumberBox _surgeFlash = new() { Minimum = 0.2, Maximum = 2.0, Step = 0.1, Decimals = 1, Unit = "초 (짧을수록 빠름)" };
     private readonly CheckBox _surgeHint = new() { Content = "레드박싱이 난 클라이언트 프리뷰에 레드박싱 전환 단축키를 밝은 회색으로 표시" };
@@ -45,7 +43,6 @@ internal sealed class PreviewSettingsView : UserControl
         root.Children.Add(Section("불투명도", "낮추면 뒤의 창이 비쳐 보입니다.", opacityRow));
 
         root.Children.Add(Section("HUD 수치 바 투명도", "받는 DPS · LOGI · 뉴트 표시", Row(_barOpacity, _barOpacityText)));
-        root.Children.Add(Section("HUD 태클 리본 투명도", "HIC · SCRAM · DISRUPT 리본", Row(_ribbonOpacity, _ribbonOpacityText)));
 
         root.Children.Add(Section("활성 클라이언트", "사용 중인 클라이언트의 프리뷰는 숨길 수 있습니다.", _hideActive));
 
@@ -73,7 +70,6 @@ internal sealed class PreviewSettingsView : UserControl
         _hideActive.Click += (_, _) => _svc.UpdateGlobalSettings(hideActive: _hideActive.IsChecked == true);
         _onlyEve.Click += (_, _) => _svc.UpdateGlobalSettings(onlyWhenEveActive: _onlyEve.IsChecked == true);
         _barOpacity.ValueChanged += (_, _) => { _barOpacityText.Text = $"{(int)_barOpacity.Value}%"; if (!_loading) _svc.UpdateGlobalSettings(hudBarOpacity: _barOpacity.Value / 100.0); };
-        _ribbonOpacity.ValueChanged += (_, _) => { _ribbonOpacityText.Text = $"{(int)_ribbonOpacity.Value}%"; if (!_loading) _svc.UpdateGlobalSettings(hudRibbonOpacity: _ribbonOpacity.Value / 100.0); };
         _surge.ValueChanged += (_, _) => { if (!_loading) _svc.UpdateGlobalSettings(surgeSeconds: (int)_surge.Value); };
         _surgeFlash.ValueChanged += (_, _) => { if (!_loading) _svc.UpdateGlobalSettings(surgeFlashMs: (int)Math.Round(_surgeFlash.Value * 1000)); };
         _surgeHint.Click += (_, _) => _svc.UpdateGlobalSettings(showSurgeKeyHint: _surgeHint.IsChecked == true);
@@ -93,9 +89,7 @@ internal sealed class PreviewSettingsView : UserControl
         _hideActive.IsChecked = _svc.Settings.HideActive;
         _onlyEve.IsChecked = _svc.Settings.OnlyWhenEveActive;
         _barOpacity.Value = Math.Round(_svc.Settings.HudBarOpacity * 100);
-        _ribbonOpacity.Value = Math.Round(_svc.Settings.HudRibbonOpacity * 100);
         _barOpacityText.Text = $"{(int)_barOpacity.Value}%";
-        _ribbonOpacityText.Text = $"{(int)_ribbonOpacity.Value}%";
         _surge.Value = _svc.Settings.SurgeSeconds;
         _surgeFlash.Value = _svc.Settings.SurgeFlashMs / 1000.0;
         _surgeHint.IsChecked = _svc.Settings.ShowSurgeKeyHint;

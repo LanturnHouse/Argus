@@ -9,7 +9,7 @@ public static class DashboardColumns
     public const string Dps = "dps";         // 받는 DPS
     public const string Logi = "logi";       // 받는 LOGI
     public const string Neut = "neut";       // 받는 뉴트
-    public const string Status = "status";   // 경고·상태 (레드박싱, 태클 등)
+    public const string Status = "status";   // 경고·상태 (레드박싱 등)
     public const string Watch = "watch";     // CCTV
 }
 

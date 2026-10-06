@@ -9,7 +9,7 @@ src/
   Argus.Core/                 모듈 인터페이스, EventBus, ClientRegistry, 설정 저장소 (WPF 비의존)
   Argus.App/                  WPF 셸. 모듈 등록(App.xaml.cs)과 탭 호스팅만 담당
   Modules/
-    Argus.Modules.Capture/    화면 변화 감지 + ROI 스크린샷 (CCTV 파일명으로 저장) + 상태이상 아이콘 인식
+    Argus.Modules.Capture/    화면 변화 감지 + ROI 스크린샷 (CCTV 파일명으로 저장)
     Argus.Modules.Alerts/     감지 알림
     Argus.Modules.Profiles/   캐릭터 설정 파일 프리셋 적용
     Argus.Modules.Preview/    eve-o-preview 대체: 썸네일, 레이아웃 프리셋, 단축키, 전투 HUD, 레드박싱
