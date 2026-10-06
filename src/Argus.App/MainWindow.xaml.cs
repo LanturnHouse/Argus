@@ -26,9 +26,9 @@ public partial class MainWindow : Window
         var app = (App)Application.Current;
 
         // 대시보드: 각 모듈이 내놓는 정보(IDashboardContributor)를 모아서 보여준다.
-        var dashboard = new DashboardView(app.Registry, app.Host.Modules.OfType<IDashboardContributor>());
+        var dashboard = new DashboardView(app.Registry, app.Host.Modules.OfType<IDashboardContributor>().Append(app.Host));
         var items = new List<NavItem> { new("", "대시보드", dashboard) };
-        var views = app.Host.Modules.Select(m => (Module: m, View: m.CreateView() as UIElement)).Where(x => x.View != null).ToList();
+        var views = app.Host.Modules.Select(m => (Module: m, View: app.Host.TryCreate(m, x => x.CreateView()) as UIElement)).Where(x => x.View != null).ToList();
         foreach (var (m, view) in views)
         {
             // 하위 항목은 부모 탭 바로 아래에서 보여준다 (부모 탭이 없으면 일반 항목).
@@ -38,7 +38,7 @@ public partial class MainWindow : Window
                 items.Add(new NavItem(child.Icon, child.DisplayName, childView!, IsChild: true));
         }
         // 모듈들의 전역 설정은 사이드바 '설정' 페이지 하나로 모은다.
-        if (SettingsPage.Create(app.Host.Modules) is { } settings)
+        if (SettingsPage.Create(app.Host.Modules, app.Host) is { } settings)
             items.Add(new NavItem("", "설정", settings));
 
         Nav.ItemsSource = items;

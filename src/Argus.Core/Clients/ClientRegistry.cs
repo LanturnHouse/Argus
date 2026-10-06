@@ -28,7 +28,11 @@ public sealed class ClientRegistry(IEventBus bus) : IClientRegistry, IDisposable
 
     public bool Activate(EveClient client) => WindowFocus.Activate(client.Hwnd);
 
-    public void Start() => _ = Task.Run(LoopAsync);
+    public void Start()
+    {
+        _current = Scan();   // 첫 틱 1초 전에도 Current 가 맞도록 동기 스캔
+        _ = Task.Run(LoopAsync);
+    }
 
     private async Task LoopAsync()
     {
@@ -48,9 +52,12 @@ public sealed class ClientRegistry(IEventBus bus) : IClientRegistry, IDisposable
         catch (OperationCanceledException) { }
     }
 
-    private static List<EveClient> Scan()
+    private Dictionary<(nint Hwnd, int Pid), bool> _eveCache = [];   // 창별 EVE 프로세스 여부 (LoopAsync 에서만 갱신)
+
+    private List<EveClient> Scan()
     {
         var found = new List<EveClient>();
+        var seen = new Dictionary<(nint, int), bool>();
         EnumWindows((h, _) =>
         {
             var len = GetWindowTextLength(h);
@@ -60,21 +67,30 @@ public sealed class ClientRegistry(IEventBus bus) : IClientRegistry, IDisposable
             var title = sb.ToString();
             if (!title.StartsWith(Prefix, StringComparison.Ordinal)) return true; // 로그인 전 "EVE" 창은 제외
             GetWindowThreadProcessId(h, out var pid);
-            if (!IsEveProcess((int)pid)) return true; // EVE-O Preview 등 같은 제목의 썸네일 창 제외
+            var key = (h, (int)pid);
+            if (!_eveCache.TryGetValue(key, out var isEve))
+            {
+                var r = IsEveProcess((int)pid);
+                if (r is null) return true;   // 조회 실패는 캐시하지 않고 다음 스캔에서 다시 본다
+                isEve = r.Value;
+            }
+            seen[key] = isEve;
+            if (!isEve) return true; // EVE-O Preview 등 같은 제목의 썸네일 창 제외
             found.Add(new EveClient(h, (int)pid, title[Prefix.Length..].Trim()));
             return true;
         }, 0);
+        _eveCache = seen;   // 닫힌 창은 캐시에서 빠진다
         return [.. found.OrderBy(c => c.Character, StringComparer.OrdinalIgnoreCase)];
     }
 
-    private static bool IsEveProcess(int pid)
+    private static bool? IsEveProcess(int pid)
     {
         try
         {
             using var p = System.Diagnostics.Process.GetProcessById(pid);
             return p.ProcessName.Equals("exefile", StringComparison.OrdinalIgnoreCase);
         }
-        catch { return false; }
+        catch { return null; }
     }
 
     public void Dispose() => _cts.Cancel();

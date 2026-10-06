@@ -3,7 +3,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using Argus.Core.Clients;
 
 namespace Argus.Modules.Preview;
 
@@ -15,18 +14,17 @@ public partial class PreviewView : UserControl
     private static Brush Frozen(byte r, byte g, byte b) { var br = new SolidColorBrush(Color.FromRgb(r, g, b)); br.Freeze(); return br; }
 
     private readonly PreviewService _svc;
-    private readonly IClientRegistry _clients;
     private readonly HotkeyService _hotkeys;
     private readonly TextBlock _hint = new() { Margin = new Thickness(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap };
     private bool _loading;
     private string? _capturing;       // 단축키를 받는 중인 대상: "next", "prev", "c:캐릭터"
     private int _captureId;           // 예전 지정 세션의 늦은 완료 통지가 새 세션을 지우지 않게 구분
     private string _presetBoxKey = "";
+    private string _presetListKey = "";
 
-    public PreviewView(PreviewService svc, IClientRegistry clients, HotkeyService hotkeys)
+    public PreviewView(PreviewService svc, HotkeyService hotkeys)
     {
         _svc = svc;
-        _clients = clients;
         _hotkeys = hotkeys;
         InitializeComponent();
         _hint.SetResourceReference(StyleProperty, "Dim");
@@ -43,7 +41,8 @@ public partial class PreviewView : UserControl
         EnabledBox.IsChecked = _svc.Settings.Enabled;
         UpdateEditButton();
 
-        PresetList.ItemsSource = _svc.Settings.Presets.ToList();
+        var presetKey = string.Join("|", _svc.Settings.Presets.Select(p => p.Id + ":" + p.Name));
+        if (presetKey != _presetListKey) { _presetListKey = presetKey; PresetList.ItemsSource = _svc.Settings.Presets.ToList(); }
         PresetList.SelectedItem = _svc.ActivePreset;
 
         var warnings = _hotkeys.Warnings();
@@ -56,10 +55,16 @@ public partial class PreviewView : UserControl
             return new PreviewRow(c.Character, c.Layout.Visible, c.Layout.InCycle,
                 $"{c.Layout.W} × {c.Layout.H}  @ ({c.Layout.X}, {c.Layout.Y})",
                 text, c.Layout.Hotkey != null, mine.Count > 0, string.Join("\n\n", mine),
-                c.Layout.InCycle ? (++cycleNo).ToString() : "-");
+                c.Layout.InCycle && !c.LoggedOut ? (++cycleNo).ToString() : "-");
         }).ToList();
         // 드래그 중에는 자주 호출되므로 내용이 같으면 다시 그리지 않는다.
-        if (ClientList.ItemsSource is not List<PreviewRow> old || !old.SequenceEqual(rows)) ClientList.ItemsSource = rows;
+        if (ClientList.ItemsSource is not List<PreviewRow> old || !old.SequenceEqual(rows))
+        {
+            var sv = FindScrollViewer(ClientList);
+            var offset = sv?.VerticalOffset ?? 0;
+            ClientList.ItemsSource = rows;
+            if (sv != null && offset > 0) { ClientList.UpdateLayout(); sv.ScrollToVerticalOffset(offset); }
+        }
         Empty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
         RebuildPresetBox(warnings);
@@ -135,11 +140,8 @@ public partial class PreviewView : UserControl
         _presetBoxKey = key;
 
         PresetBox.Children.Clear();
-        var title = new TextBlock { Text = $"프리셋 '{p.Name}' 설정" }; title.SetResourceReference(StyleProperty, "CardTitle");
-        var desc = new TextBlock { Text = "이 프리셋에 적용되는 단축키입니다.", Margin = new Thickness(0, 2, 0, 10) };
-        desc.SetResourceReference(StyleProperty, "Dim");
+        var title = new TextBlock { Text = $"프리셋 '{p.Name}' 설정", Margin = new Thickness(0, 0, 0, 10) }; title.SetResourceReference(StyleProperty, "CardTitle");
         PresetBox.Children.Add(title);
-        PresetBox.Children.Add(desc);
         PresetBox.Children.Add(_hint);
         foreach (var w in warnings) PresetBox.Children.Add(WarningBox(w.Message));
         PresetBox.Children.Add(CycleRow("사이클 다음 클라이언트", "next", p.CycleNext, t => _svc.SetCycleHotkey(true, t)));
@@ -383,4 +385,15 @@ public partial class PreviewView : UserControl
     private ListBoxItem? RowContainer(string character) =>
         ClientList.ItemsSource is List<PreviewRow> rows && rows.Find(r => r.Character == character) is { } row
             ? ClientList.ItemContainerGenerator.ContainerFromItem(row) as ListBoxItem : null;
+
+    private static ScrollViewer? FindScrollViewer(DependencyObject root)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollViewer sv) return sv;
+            if (FindScrollViewer(child) is { } found) return found;
+        }
+        return null;
+    }
 }

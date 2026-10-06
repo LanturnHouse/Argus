@@ -16,7 +16,7 @@ public partial class TemplatesTab : UserControl, IReloadable
         _svc = svc;
         InitializeComponent();
         _svc.Changed += () => Dispatcher.BeginInvoke(Reload);  // 폴더/설정파일이 바뀌면 전체 갱신
-        _timer.Tick += (_, _) => ReloadChars(keepSelection: true);
+        _timer.Tick += (_, _) => ReloadChars();
         Loaded += (_, _) => _timer.Start();   // 실행 중 표시를 주기적으로 갱신
         Unloaded += (_, _) => _timer.Stop();
     }
@@ -24,7 +24,7 @@ public partial class TemplatesTab : UserControl, IReloadable
     public void Reload()
     {
         ReloadFolders();
-        ReloadChars(keepSelection: true);
+        ReloadChars();
         ReloadTemplates();
     }
 
@@ -40,14 +40,14 @@ public partial class TemplatesTab : UserControl, IReloadable
 
     // ---- 캐릭터 목록 ----
 
-    private void ReloadChars(bool keepSelection)
+    private void ReloadChars()
     {
-        var selectedId = keepSelection ? (CharList.SelectedItem as CharRow)?.Id : null;
+        var selectedId = (CharList.SelectedItem as CharRow)?.Id;
         var rows = _svc.ListCharFiles().Select(f => new CharRow
         {
             File = f,
             Name = _svc.Names.Display(f.Id),
-            Detail = CharRow.Format(_svc, f),
+            Detail = CharRow.Format(f),
             State = CharRow.StateText(_svc.GetRunState(f.Id)),
             Warn = CharRow.WarnText(f),
         }).ToList();

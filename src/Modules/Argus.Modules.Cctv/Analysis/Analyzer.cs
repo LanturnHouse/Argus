@@ -113,20 +113,19 @@ public sealed class Analyzer(CctvStore store)
 
     // ---------- 이전 프레임 ----------
 
-    private sealed record Previous(long? ImageId, List<Observation> Observations);
+    private sealed record Previous(long? ImageId);
 
     /// <summary>이전 프레임. epochKey(영역 세트가 시작된 촬영 키, '' 이면 제한 없음) 이전의 프레임은 찾지 않는다 — 영역을 바꾸거나 감시를 멈췄다 다시 시작한 앞뒤는 이어 붙이지 않는다.</summary>
-    private Previous PreviousObservations(string watcherId, string captureKey, string epochKey)
+    private Previous PreviousFrame(string watcherId, string captureKey, string epochKey)
     {
         var prevImage = Db.One("""
-            SELECT i.id FROM images i JOIN observations o ON o.image_id = i.id
-            WHERE o.watcher_id = ? AND i.capture_key < ? AND i.processing_status = 'processed' AND (? = '' OR i.capture_key >= ?)
-            GROUP BY i.id, i.capture_key ORDER BY i.capture_key DESC LIMIT 1
-            """, watcherId, captureKey, epochKey, epochKey);
-        if (prevImage == null) return new Previous(null, []);
-        var observations = Db.Query("SELECT region_kind, payload_json, confidence FROM observations WHERE image_id = ? AND watcher_id = ? ORDER BY id", prevImage.Long("id"), watcherId)
-            .Select(r => new Observation { WatcherId = watcherId, Kind = Names.ToRegionKind(r.Str("region_kind")!), Payload = CctvJson.Deserialize<RegionPayload>(r.Str("payload_json")) ?? new RegionPayload(), Confidence = r.Dbl("confidence") }).ToList();
-        return new Previous(prevImage.Long("id"), observations);
+            SELECT i.id FROM images i
+            WHERE i.processing_status = 'processed' AND i.capture_key < ? AND (? = '' OR i.capture_key >= ?)
+              AND EXISTS (SELECT 1 FROM observations o WHERE o.image_id = i.id AND o.watcher_id = ?)
+            ORDER BY i.capture_key DESC LIMIT 1
+            """, captureKey, epochKey, epochKey, watcherId);
+        if (prevImage == null) return new Previous(null);
+        return new Previous(prevImage.Long("id"));
     }
 
     // ---------- 이벤트 기록 ----------
@@ -375,7 +374,7 @@ public sealed class Analyzer(CctvStore store)
     private static bool OverviewIsReliable(List<Observation> observations)
     {
         var overview = observations.Where(o => o.Kind == RegionKind.Overview).ToList();
-        return overview.Count > 0 && overview.All(o => o.Payload.Fields.OverviewDetected == true);
+        return overview.Count > 0 && overview.All(o => o.Payload.Fields.OverviewDetected == true && o.Payload.Fields.OverviewTruncated != true);
     }
 
     // ---------- 현재 대상 (오버뷰) ----------
@@ -645,7 +644,7 @@ public sealed class Analyzer(CctvStore store)
     /// <summary>한 이미지의 관측을 이전 프레임과 비교해 이벤트와 현재 상태를 갱신한다. 이미지는 촬영 순서대로 넣는다.</summary>
     public void AnalyzeImage(ImageRow image, IReadOnlyList<Observation> observations)
     {
-        Db.Locked(() =>
+        Db.Transaction(() =>
         {
             foreach (var group in observations.GroupBy(o => o.WatcherId))
             {
@@ -654,7 +653,7 @@ public sealed class Analyzer(CctvStore store)
                 var watchType = Names.ToWatchType(watcherRow.Str("watch_type")!);
                 var current = group.ToList();
                 var epoch = store.RegionEpoch(group.Key, image.CaptureKey);
-                var previous = PreviousObservations(group.Key, image.CaptureKey, epoch.ValidFrom);
+                var previous = PreviousFrame(group.Key, image.CaptureKey, epoch.ValidFrom);
                 // 새 출발점: 영역을 바꾸거나 감시를 멈췄다 다시 시작한 첫 프레임. 앞의 대상 · 시그니처 · 도킹 몫과 이어 붙이지 않는다.
                 var baseline = epoch.Baseline && previous.ImageId == null;
                 if (baseline) ClearWatcherState(group.Key);

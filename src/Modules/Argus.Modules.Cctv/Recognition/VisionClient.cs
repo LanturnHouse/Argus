@@ -117,6 +117,7 @@ public sealed class VisionClient : IDisposable
             return null;
         }
         LastError = null; LastFailureWasBadResponse = false;
+        if (json["done_reason"] is JsonValue reason && reason.TryGetValue<string>(out var why) && why == "length") parsed["_truncated"] = true;
         return parsed;
     }
 

@@ -25,7 +25,6 @@ internal sealed class PreviewTile : IDisposable
     private Window? _overlay;
     private nint _hostHwnd, _overlayHwnd, _thumb;
     private Rect32 _bounds;
-    private bool _wantVisible;
     private bool _isActive;
 
     // 드래그(편집 모드) 상태
@@ -67,6 +66,7 @@ internal sealed class PreviewTile : IDisposable
         _host.MouseLeftButtonUp += OnMouseUp;
         _host.MouseRightButtonDown += OnRightDown;
         _host.MouseRightButtonUp += OnRightUp;
+        _host.LostMouseCapture += (_, _) => EndDrag();
     }
 
     private void OnHostInitialized()
@@ -93,7 +93,6 @@ internal sealed class PreviewTile : IDisposable
     /// <summary>창을 만들고(처음 한 번) 지정한 위치에 보여준다.</summary>
     public void Show(Rect32 bounds)
     {
-        _wantVisible = true;
         _bounds = bounds;
         if (!_host.IsVisible) _host.Show();
         EnsureOverlay();
@@ -103,7 +102,6 @@ internal sealed class PreviewTile : IDisposable
 
     public void Hide()
     {
-        _wantVisible = false;
         if (_host.IsVisible) _host.Hide();
         if (_overlay is { IsVisible: true }) _overlay.Hide();
     }
@@ -184,7 +182,7 @@ internal sealed class PreviewTile : IDisposable
         UpdateThumbnail();
     }
 
-    /// <summary>원본 창의 최소화 여부와 화면 비율을 확인한다. 비율이 바뀌면 타일 높이를 맞추고 true 를 반환한다.</summary>
+    /// <summary>원본 창의 최소화 여부와 화면 비율을 확인한다. 비율이 맞지 않으면 타일 높이를 맞추고 true 를 반환한다.</summary>
     public bool RefreshSource()
     {
         var minimized = Win32.IsIconic(Client.Hwnd);
@@ -193,11 +191,12 @@ internal sealed class PreviewTile : IDisposable
 
         if (!Win32.GetClientRect(Client.Hwnd, out var c) || c.Width <= 0 || c.Height <= 0) return false;
         var aspect = c.Width / (double)c.Height;
-        var changed = Math.Abs(aspect - Aspect) > 0.01;
         Aspect = aspect;
-        if (changed && _wantVisible && Math.Abs(_bounds.Width / (double)_bounds.Height - aspect) > 0.02)
+        if (_bounds.Width <= 0 || _bounds.Height <= 0) return false;
+        var h = (int)Math.Round(_bounds.Width / aspect);
+        if (Math.Abs(h - _bounds.Height) > 1)   // 1px 반올림 오차는 무시: 극단 비율·작은 크기에서 매 틱 SetBounds/저장 반복 방지
         {
-            SetBounds(Rect32.FromSize(_bounds.Left, _bounds.Top, _bounds.Width, (int)Math.Round(_bounds.Width / aspect)));
+            SetBounds(Rect32.FromSize(_bounds.Left, _bounds.Top, _bounds.Width, h));
             return true;
         }
         return false;
@@ -247,10 +246,12 @@ internal sealed class PreviewTile : IDisposable
     private void OnRightUp(object sender, MouseButtonEventArgs e)
     {
         if (!_rightDown) return;
+        var wasDragging = _dragging;
         _rightDown = false;
+        _dragging = false;
         _host.ReleaseMouseCapture();
         e.Handled = true;
-        if (_dragging) { _dragging = false; _svc.SaveBounds(this); return; }
+        if (wasDragging) { _svc.SaveBounds(this); return; }
         ShowMenu();
     }
 
@@ -273,6 +274,12 @@ internal sealed class PreviewTile : IDisposable
             if (e.RightButton != MouseButtonState.Pressed) { _rightDown = false; _host.ReleaseMouseCapture(); return; }
             if (Math.Abs(cur.X - _dragCursor.X) + Math.Abs(cur.Y - _dragCursor.Y) < 5) return;   // 살짝 흔들린 것은 끌기로 보지 않는다
             _dragging = true;
+        }
+        if (_dragging && (_rightDown ? e.RightButton : e.LeftButton) != MouseButtonState.Pressed)
+        {
+            EndDrag();
+            _host.ReleaseMouseCapture();
+            return;
         }
         if (!_dragging)
         {
@@ -327,6 +334,22 @@ internal sealed class PreviewTile : IDisposable
             return;
         }
         if (!_svc.EditMode) _svc.ActivateClient(Client); // 클릭 = 그 클라이언트로 전환
+    }
+
+    /// <summary>끌기를 끝낸다. 마우스 캡처를 잃어도(다른 창이 가져가는 등) 타일이 커서에 붙지 않게 한다. 여러 번 불려도 안전하다.</summary>
+    private void EndDrag()
+    {
+        if (!_dragging && !_rightDown) return;
+        var was = _dragging;
+        _dragging = false;
+        _rightDown = false;
+        if (was)
+        {
+            _svc.SaveBounds(this);
+            if (_groupResized) foreach (var (tile, _) in _dragGroup) _svc.SaveBounds(tile);
+        }
+        _dragGroup = [];
+        _groupResized = false;
     }
 
     private static Cursor CursorFor(DragZone z) => z switch

@@ -17,7 +17,7 @@ public sealed record CctvStatus(
     string Model, DateTime? LastAnalyzedAt, int ModelCalls, int ReusedCalls);
 
 /// <summary>
-/// CCTV 분석: 스크린샷 폴더를 지켜보다가(화면 감시 캡처가 저장한 CCTV 파일) 새 이미지를 등록하고,
+/// CCTV 분석: 스크린샷 폴더를 지켜보다가(CCTV 가 저장한 파일) 새 이미지를 등록하고,
 /// 분석이 켜져 있으면 비전 모델로 인식 영역을 읽어 이벤트를 판정한다.
 /// 비전 모델은 사용자가 분석을 켜 둔 동안 '읽을 이미지가 있을 때만' 올리고, 대기가 모두 끝나면(짧은 유예 뒤) 내린다.
 /// Argus 를 켠다고, 분석을 켠다고 모델이 저절로 올라가지 않는다.
@@ -45,6 +45,7 @@ public sealed class CctvService : IDisposable
     public CctvSettings Settings { get; }
     public AnalysisState State { get; private set; } = AnalysisState.Off;
     private bool _modelLoaded;
+    private VisionSettings? _loadedWith;    // 모델을 올릴 때의 서버·모델 (올라가 있는 동안 설정이 바뀌어도 내리기는 이쪽으로 보낸다)
     public string? Message { get; private set; }
     public bool IsError { get; private set; }
     public string CropRoot { get; }
@@ -91,7 +92,7 @@ public sealed class CctvService : IDisposable
         get
         {
             if (!string.IsNullOrWhiteSpace(Settings.ImageFolder)) return Settings.ImageFolder;
-            // 화면 감시 캡처의 설정 파일은 디스크에서 읽으므로, 초당 여러 번 묻지 않도록 잠깐 기억해 둔다.
+            // CCTV(capture)의 설정 파일은 디스크에서 읽으므로, 초당 여러 번 묻지 않도록 잠깐 기억해 둔다.
             var now = Environment.TickCount64;
             if (_captureFolder == null || now - _captureFolderAt > 3000)
             {
@@ -145,7 +146,7 @@ public sealed class CctvService : IDisposable
             var (key, at) = ParseCapture(m.Groups[1].Value, m.Groups[2].Value);
             if (Store.AddImage(folder, path, name, m.Groups[3].Value, key, at, info.Length, new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeMilliseconds())) changed = true;
         }
-        var removed = Store.RemoveMissingImages(folder, present);
+        var removed = known.Any(p => !present.Contains(p)) ? Store.RemoveMissingImages(folder, present) : [];
         foreach (var id in removed)
         {
             try { var dir = Path.Combine(CropRoot, id.ToString()); if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { /* 다음에 다시 */ }
@@ -208,8 +209,13 @@ public sealed class CctvService : IDisposable
     {
         if (!_modelLoaded) return;
         _modelLoaded = false;
-        await _vision.UnloadModelAsync(Settings.Vision).ConfigureAwait(false);
+        var target = _loadedWith ?? Settings.Vision;
+        _loadedWith = null;
+        await _vision.UnloadModelAsync(target).ConfigureAwait(false);
     }
+
+    private static bool SameTarget(VisionSettings a, VisionSettings b) =>
+        string.Equals(a.Host.Trim().TrimEnd('/'), b.Host.Trim().TrimEnd('/'), StringComparison.Ordinal) && string.Equals(a.Model.Trim(), b.Model.Trim(), StringComparison.Ordinal);
 
     private void SetState(AnalysisState state) { lock (_lock) { if (State != AnalysisState.Off) State = state; } Changed?.Invoke(); }
 
@@ -223,6 +229,8 @@ public sealed class CctvService : IDisposable
             ImageRow? image = null;
             try
             {
+                // 올라가 있는 동안 서버·모델을 바꿨다: 이전 모델을 먼저 내린다 (다음 이미지에서 새 모델을 올린다).
+                if (_modelLoaded && _loadedWith is { } lw && !SameTarget(lw, Settings.Vision)) { await UnloadIfLoadedAsync().ConfigureAwait(false); SetState(AnalysisState.Idle); }
                 image = Store.NextPendingImage();
                 if (image == null)
                 {
@@ -239,12 +247,13 @@ public sealed class CctvService : IDisposable
 
                 if (!_modelLoaded)
                 {
+                    var target = new VisionSettings { Host = Settings.Vision.Host, Model = Settings.Vision.Model, TimeoutSeconds = Settings.Vision.TimeoutSeconds, KeepAlive = Settings.Vision.KeepAlive };
                     SetState(AnalysisState.Loading);
-                    lock (_lock) { Message = $"모델 '{Settings.Vision.Model}' 을(를) 올리는 중… (대기 {Store.Counts().Pending}장)"; IsError = false; }
+                    lock (_lock) { Message = $"모델 '{target.Model}' 을(를) 올리는 중… (대기 {Store.Counts().Pending}장)"; IsError = false; }
                     Changed?.Invoke();
-                    var error = await _vision.LoadModelAsync(Settings.Vision, ct).ConfigureAwait(false);
+                    var error = await _vision.LoadModelAsync(target, ct).ConfigureAwait(false);
                     if (error != null) throw new VisionUnavailableException(error);
-                    _modelLoaded = true;
+                    _loadedWith = target; _modelLoaded = true;
                     lock (_lock) Message = null;
                 }
                 SetState(AnalysisState.Working);
@@ -401,10 +410,17 @@ public sealed class CctvService : IDisposable
 
     // ---------- 상태 ----------
 
+    // 이미지 수 · 처리 현황은 DB 전체를 훑는 집계라 쓰기 횟수가 같으면 다시 구하지 않는다. (Db 를 거치지 않는 쓰기를 추가하면 이 캐시가 낡는다.)
+    private sealed record StatusAgg(long Writes, string Folder, int Images, ProcessingCounts Counts);
+    private StatusAgg? _agg;
+
     public CctvStatus Status()
     {
         var folder = ImageFolder;
-        return new CctvStatus(State, Message, IsError, folder, Store.ImageCount(folder), Store.Counts(), _processing, Settings.Vision.Model, _lastAnalyzedAt, _recognizer.ModelCalls, _recognizer.ReusedCalls);
+        var writes = Store.Db.WriteCount;   // 쿼리보다 먼저 읽는다
+        var agg = _agg;
+        if (agg == null || agg.Writes != writes || agg.Folder != folder) _agg = agg = new StatusAgg(writes, folder, Store.ImageCount(folder), Store.Counts());
+        return new CctvStatus(State, Message, IsError, folder, agg.Images, agg.Counts, _processing, Settings.Vision.Model, _lastAnalyzedAt, _recognizer.ModelCalls, _recognizer.ReusedCalls);
     }
 
     public void Dispose()

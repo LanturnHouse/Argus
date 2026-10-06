@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -13,12 +14,14 @@ public sealed class EsiNames
 {
     private const string BaseUrl = "https://esi.evetech.net";
     private const string SettingsKey = "profiles.names";
+    private static readonly TimeSpan NotFoundTtl = TimeSpan.FromHours(1);
 
     private static readonly HttpClient Http = CreateClient();
 
     private readonly ISettingsStore _store;
     private readonly NamesData _data;
     private readonly object _lock = new();
+    private readonly Dictionary<long, DateTime> _notFoundAt = [];  // 세션 메모리 전용, 파일에 저장하지 않음
 
     public EsiNames(ISettingsStore store)
     {
@@ -40,7 +43,8 @@ public sealed class EsiNames
     public async Task<int> ResolveAsync(IEnumerable<long> ids, CancellationToken ct = default)
     {
         long[] missing;
-        lock (_lock) missing = [.. ids.Distinct().Where(i => !_data.Names.ContainsKey(i))];
+        var now = DateTime.UtcNow;
+        lock (_lock) missing = [.. ids.Distinct().Where(i => !_data.Names.ContainsKey(i) && !(_notFoundAt.TryGetValue(i, out var t) && now - t < NotFoundTtl))];
         if (missing.Length == 0) { LastError = null; return 0; }
 
         var found = 0;
@@ -56,6 +60,7 @@ public sealed class EsiNames
             foreach (var id in missing.Where(i => Get(i) == null))
             {
                 try { found += await ResolveOneAsync(id, ct); }
+                catch (HttpRequestException hx) when (hx.StatusCode == HttpStatusCode.NotFound) { lock (_lock) _notFoundAt[id] = DateTime.UtcNow; LastError = hx.Message; }
                 catch (Exception inner) when (inner is not OperationCanceledException) { LastError = inner.Message; }
             }
         }

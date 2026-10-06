@@ -32,6 +32,9 @@ internal sealed class HotkeyMatcher
     /// <summary>단축키가 맞고 범위(EVE/Argus 가 앞) 조건도 맞는지. 맞을 때만 호출된다.</summary>
     public Func<bool> InScope = () => true;
 
+    /// <summary>지정 모드 입력을 받아도 되는지 (Argus 가 앞일 때만 true). 아니면 입력을 삼키지 않고 평소 단축키로 처리한다.</summary>
+    public Func<bool> CaptureScope = () => true;
+
     /// <summary>동작이 발생했을 때 (훅 스레드에서 호출되므로 빨리 반환해야 한다).</summary>
     public Action<string>? Triggered;
 
@@ -53,7 +56,7 @@ internal sealed class HotkeyMatcher
         if (!e.IsMouse && ModifierKeys.Contains(e.Code)) return false;
 
         var cap = Capture;
-        if (cap != null)
+        if (cap != null && CaptureScope())
         {
             HotkeyTrigger? t = !e.IsMouse && e.Code == VkEscape && e.Mods == Mods.None
                 ? null

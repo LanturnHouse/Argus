@@ -1,5 +1,4 @@
 using System.Windows;
-using Argus.Core.Clients;
 using Argus.Core.Dashboard;
 using Argus.Core.Modules;
 
@@ -12,7 +11,6 @@ public sealed class PreviewModule : IArgusModule, IDashboardContributor
 
     private PreviewService? _service;
     private HotkeyService? _hotkeys;
-    private IClientRegistry? _clients;
 
     public string Id => "argus.preview";
     public string Icon => "";
@@ -20,7 +18,6 @@ public sealed class PreviewModule : IArgusModule, IDashboardContributor
 
     public Task StartAsync(IModuleContext context, CancellationToken ct)
     {
-        _clients = context.Clients;
         // 창은 UI 스레드에서 만들어야 한다.
         Application.Current.Dispatcher.Invoke(() =>
         {
@@ -39,7 +36,7 @@ public sealed class PreviewModule : IArgusModule, IDashboardContributor
         return Task.CompletedTask;
     }
 
-    public object? CreateView() => _service is null || _clients is null || _hotkeys is null ? null : new PreviewView(_service, _clients, _hotkeys);
+    public object? CreateView() => _service is null || _hotkeys is null ? null : new PreviewView(_service, _hotkeys);
 
     // ---------- 대시보드 ----------
 
@@ -56,13 +53,14 @@ public sealed class PreviewModule : IArgusModule, IDashboardContributor
         };
         if (info.Layout.Hotkey is { IsEmpty: false } h) chips.Add(new($"⌨ {h}", ChipTone.Neutral, "이 클라이언트로 바로 가는 단축키", Column: DashboardColumns.Cycle));
         if (!info.Layout.Visible) chips.Add(new("프리뷰 숨김", ChipTone.Warn, "이 프리셋에서 프리뷰를 숨겼습니다"));
+        if (_service.IsSurging(info)) chips.Add(new("레드박싱", ChipTone.Bad, "받는 피해가 갑자기 크게 늘었습니다"));
         return chips;
     }
 
     public IReadOnlyList<DashboardChip> SummaryChips()
     {
         if (_service is null) return [];
-        var cycle = _service.Clients().Count(c => c.Layout.InCycle);
+        var cycle = _service.Clients().Count(c => c.Layout.InCycle && !c.LoggedOut);
         return
         [
             new($"프리셋 '{_service.ActivePreset.Name}'", ChipTone.Accent, "지금 적용 중인 프리뷰 레이아웃 프리셋"),

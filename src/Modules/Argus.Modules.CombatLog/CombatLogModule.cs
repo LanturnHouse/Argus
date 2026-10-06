@@ -50,7 +50,6 @@ public sealed class CombatLogModule : IArgusModule, IDashboardContributor
             Num(DashboardColumns.Logi, "받는 LOGI", s.LogiIn, Fmt(s.LogiIn), "#9BE7C4"),
             Num(DashboardColumns.Neut, "받는 뉴트 (노스·캡 전송 반영). 캡이 빠지면 빨강 -, 늘어나면 파랑 +", s.NeutIn, FmtNeut(s.NeutIn), s.NeutIn > 0 ? "#FF5C5C" : "#5CB8FF"),
         };
-        if (s.SurgeAt != long.MinValue && Environment.TickCount64 - s.SurgeAt <= 10_000) chips.Add(new("레드박싱", ChipTone.Bad, "받는 피해가 갑자기 크게 늘었습니다"));
         return chips;
     }
 

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using Argus.Core.Clients;
 using Argus.Core.Events;
@@ -86,7 +87,8 @@ public sealed class CaptureService : IDisposable
     {
         if (!_entries.TryGetValue(character, out var e)) return null;
         var s = GetOrCreateSession(e);
-        return s != null && !s.IsMinimized ? s.Grab() : null;
+        try { return s != null && !s.IsMinimized ? s.Grab() : null; }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[Capture] Grab 실패: {ex.Message}"); return null; }
     }
 
     public bool IsMinimized(string character) => _entries.TryGetValue(character, out var e) && e.Session?.IsMinimized == true;
@@ -95,16 +97,27 @@ public sealed class CaptureService : IDisposable
     {
         lock (_sync)
         {
-            _settings.Clients = [.. _entries.Values.Select(e => e.Config)];
+            var live = _entries.Values.Select(e => e.Config).ToList();
+            _settings.Clients = [.. _settings.Clients.Where(c => !live.Any(l => string.Equals(l.Character, c.Character, StringComparison.OrdinalIgnoreCase))), .. live];
             _ctx.Settings.Save(SettingsKey, _settings);
         }
+    }
+
+    public void OpenOutputFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(OutputFolder);
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{OutputFolder}\"") { UseShellExecute = true });
+        }
+        catch (Exception ex) { System.Windows.MessageBox.Show("폴더를 열 수 없습니다.\n" + ex.Message, "열기"); }
     }
 
     private WgcSession? GetOrCreateSession(Entry e)
     {
         lock (_sync)
         {
-            if (e.Session is { IsAlive: false }) { e.Session.Dispose(); e.Session = null; }
+            if (e.Session is { IsAlive: false } or { Faulted: true }) { e.Session.Dispose(); e.Session = null; }
             return e.Session ??= WgcSession.TryCreate(e.Client.Hwnd);
         }
     }
@@ -121,7 +134,7 @@ public sealed class CaptureService : IDisposable
             {
                 if (!present.TryGetValue(name, out var c))
                 {
-                    // 클라이언트 종료: 감시와 세션을 정리하고 설정은 남긴다.
+                    // 클라이언트 종료: 감시와 세션을 정리한다. 설정은 _settings.Clients 에 남아 재접속 때 재사용된다.
                     entry.Monitor.Stop();
                     entry.Session?.Dispose();
                     _entries.TryRemove(name, out _);
@@ -153,8 +166,8 @@ public sealed class CaptureService : IDisposable
     public void Dispose()
     {
         foreach (var d in _subs) d.Dispose();
+        Save();
         foreach (var e in _entries.Values) { e.Monitor.Stop(); e.Session?.Dispose(); }
         _entries.Clear();
-        Save();
     }
 }

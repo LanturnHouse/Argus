@@ -48,9 +48,7 @@ public sealed class DashboardView : UserControl
         _clients = clients;
         _contributors = [.. contributors];
 
-        var title = new TextBlock { Text = "대시보드", FontSize = 24, FontWeight = FontWeights.Bold };
-        var sub = new TextBlock { Text = "실행 중인 EVE 클라이언트와 각 기능의 현재 상태", Margin = new Thickness(0, 4, 0, 16) };
-        sub.SetResourceReference(StyleProperty, "Dim");
+        var title = new TextBlock { Text = "대시보드", FontSize = 24, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 16) };
         _empty.SetResourceReference(StyleProperty, "Dim");
 
         var summaryBar = new Border { Child = _summary, Padding = new Thickness(14, 10, 14, 4), Margin = new Thickness(0, 0, 0, 14) };
@@ -58,7 +56,6 @@ public sealed class DashboardView : UserControl
 
         var root = new StackPanel();
         root.Children.Add(title);
-        root.Children.Add(sub);
         root.Children.Add(summaryBar);
         root.Children.Add(SectionLabel("클라이언트"));
         root.Children.Add(_tableHost);
@@ -69,9 +66,6 @@ public sealed class DashboardView : UserControl
         Loaded += (_, _) => { Refresh(force: true); _timer.Start(); };
         Unloaded += (_, _) => _timer.Stop();
     }
-
-    /// <summary>지금 바로 갱신한다 (시험용).</summary>
-    public void RefreshNow() => Refresh(force: true);
 
     private static TextBlock SectionLabel(string text)
     {
@@ -93,7 +87,7 @@ public sealed class DashboardView : UserControl
         return list;
     }
 
-    private static string Sig(IEnumerable<DashboardChip> chips) => string.Join("\u0001", chips.Select(c => $"{c.Text}|{c.Tone}|{c.Color}|{c.Column}|{c.Plain}"));
+    private static string Sig(IEnumerable<DashboardChip> chips) => string.Join("\u0001", chips.Select(c => $"{c.Text}|{c.Tone}|{c.Color}|{c.Column}|{c.Plain}|{c.Tooltip}"));
 
     private sealed record Row(EveClient Client, bool Active, List<DashboardChip> Chips);
 

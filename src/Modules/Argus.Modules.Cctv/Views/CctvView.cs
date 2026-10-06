@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -8,7 +9,7 @@ using System.Windows.Threading;
 
 namespace Argus.Modules.Cctv;
 
-/// <summary>사이드바 'CCTV' 탭: 분석 켜기/끄기와 상태, 요약, 감시 눈깔, 감지 타임라인, 코퍼레이션 현황, 프로빙 변화.</summary>
+/// <summary>사이드바 'CCTV > 분석' 탭: 분석 켜기/끄기와 상태, 요약, 감시 눈깔, 감지 타임라인, 코퍼레이션 현황, 프로빙 변화.</summary>
 internal sealed class CctvView : UserControl
 {
     private readonly CctvService _svc;
@@ -27,6 +28,7 @@ internal sealed class CctvView : UserControl
     private int _page;
     private string _signature = "\0";
     private bool _refreshQueued;
+    private volatile bool _shown;
     private (string, long) _lastStamp;
     private ViewData? _data;
 
@@ -59,15 +61,15 @@ internal sealed class CctvView : UserControl
         _search.TextChanged += (_, _) => { _searchHint.Visibility = _search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; FilterChanged(); };
         _svc.Changed += OnServiceChanged;
         _timer.Tick += (_, _) => Refresh();
-        Loaded += (_, _) => { Refresh(force: true); _timer.Start(); };
-        Unloaded += (_, _) => _timer.Stop();
+        Loaded += (_, _) => { _shown = true; Refresh(force: true); _timer.Start(); };
+        Unloaded += (_, _) => { _shown = false; _timer.Stop(); };
     }
 
     private void OnServiceChanged()
     {
-        if (_refreshQueued) return;
+        if (!_shown || _refreshQueued) return;
         _refreshQueued = true;
-        Dispatcher.BeginInvoke(DispatcherPriority.Background, () => { _refreshQueued = false; Refresh(); });
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, () => { _refreshQueued = false; if (_shown) Refresh(); });
     }
 
     // ---------- 데이터 모으기 ----------
@@ -77,9 +79,10 @@ internal sealed class CctvView : UserControl
         var store = _svc.Store;
         var events = store.Events(_svc.Settings.TimelineLimit);
         var objects = store.CurrentObjects();
-        var canonical = Summaries.CorporationCanonicalizer(events, objects);
+        var summaryEvents = events.Concat(store.StateEvents()).DistinctBy(e => e.Id).OrderByDescending(e => e.Time, StringComparer.Ordinal).ThenByDescending(e => e.Id).ToList();   // 최신순(내림차순) 유지 필수: Summaries 가 이 순서에 의존
+        var canonical = Summaries.CorporationCanonicalizer(summaryEvents, objects);
         return new ViewData(_svc.Status(), store.ListWatchers(), events, objects, store.CurrentSignatures(), store.DockPeaks(), store.RegionWarnings(),
-            Summaries.BuildLatestStates(events, objects, canonical), Summaries.BuildCorpGroups(events, objects, canonical), canonical);
+            Summaries.BuildLatestStates(summaryEvents, objects, canonical), Summaries.BuildCorpGroups(summaryEvents, objects, canonical), canonical);
     }
 
     private void Refresh(bool force = false)
@@ -93,7 +96,7 @@ internal sealed class CctvView : UserControl
 
         var s = d.Status;
         var sig = string.Join("\u0002", s.State, s.Message, s.IsError, s.Folder, s.ImageCount, s.Counts, s.Processing, s.Model, s.ModelCalls, s.ReusedCalls,
-            string.Join("|", d.Watchers.Select(w => $"{w.Id}:{w.Label}:{w.Character}:{w.WatchType}:{w.RegionVersion}:{w.Regions.Count}")),
+            string.Join("|", d.Watchers.Select(w => $"{w.Id}:{w.Label}:{w.Character}:{w.WatchType}:{w.RegionVersion}:{w.Regions.Count}:{w.Enabled}:{w.Paused}:{w.PausedAt}")),
             d.Events.Count, d.Events.FirstOrDefault()?.Id, string.Join(",", d.Events.Take(30).Select(e => $"{e.Id}{e.Type}{e.Ship}{EventPresentation.Verification(e)}")),
             string.Join("|", d.Objects.Select(o => $"{o.Character}{o.LastSeenAt}")), string.Join("|", d.Signatures.Select(x => $"{x.Id}{x.Name}{x.Group}")),
             string.Join("|", d.DockPeaks.Select(p => $"{p.WatcherId}{p.PeakCount}")), string.Join("|", d.Warnings.Select(w => $"{w.WatcherId}{w.Kind}")));
@@ -144,8 +147,6 @@ internal sealed class CctvView : UserControl
         var body = new StackPanel();
         body.Children.Add(top);
         if (!string.IsNullOrEmpty(s.Message)) body.Children.Add(UiKit.Text(s.Message!, 12, FontWeights.Normal, s.IsError ? UiKit.Bad : UiKit.Warn, new Thickness(0, 10, 0, 0), wrap: true));
-        else if (s.State == AnalysisState.Off)
-            body.Children.Add(UiKit.Dim("분석이 꺼져 있습니다. 켜면 읽을 이미지가 있을 때만 모델을 올립니다.", 12, new Thickness(0, 10, 0, 0)));
         else if (s.State == AnalysisState.Working && s.Processing != null)
             body.Children.Add(UiKit.Dim($"읽는 중: {s.Processing}", 12, new Thickness(0, 10, 0, 0)));
 
@@ -220,13 +221,13 @@ internal sealed class CctvView : UserControl
     {
         int Count(LiveStatus st) => d.Latest.Values.Count(x => x.Status == st);
         var grid = new UniformGrid { Rows = 1, Columns = 3 };
-        grid.Children.Add(StatCard("현재 도킹 확인", Count(LiveStatus.Docked), d.DockPeaks.Count > 0 ? (d.DockPeaks.Count > 1 ? $"최고 도킹 수 합계 {d.DockPeaks.Sum(p => p.PeakCount)}명 · 눈깔 {d.DockPeaks.Count}개" : $"최고 도킹 수 {d.DockPeaks[0].PeakCount}명") : "도킹 수 감지 대기", "도킹", d, LiveStatus.Docked, 0));
-        grid.Children.Add(StatCard("감지 · 미도킹", Count(LiveStatus.Observed), "위치 미확정", "감지", d, LiveStatus.Observed, 1));
-        grid.Children.Add(StatCard("성계 이탈", Count(LiveStatus.Departed), "점프아웃 판정", "이탈", d, LiveStatus.Departed, 2));
+        grid.Children.Add(StatCard("현재 도킹 확인", Count(LiveStatus.Docked), d.DockPeaks.Count > 0 ? (d.DockPeaks.Count > 1 ? $"최고 도킹 수 합계 {d.DockPeaks.Sum(p => p.PeakCount)}명 · 눈깔 {d.DockPeaks.Count}개" : $"최고 도킹 수 {d.DockPeaks[0].PeakCount}명") : "도킹 수 감지 대기", d, LiveStatus.Docked, 0));
+        grid.Children.Add(StatCard("감지 · 미도킹", Count(LiveStatus.Observed), "위치 미확정", d, LiveStatus.Observed, 1));
+        grid.Children.Add(StatCard("성계 이탈", Count(LiveStatus.Departed), "점프아웃 판정", d, LiveStatus.Departed, 2));
         return grid;
     }
 
-    private UIElement StatCard(string title, int value, string note, string kind, ViewData d, LiveStatus status, int index)
+    private UIElement StatCard(string title, int value, string note, ViewData d, LiveStatus status, int index)
     {
         var sp = new StackPanel();
         sp.Children.Add(UiKit.Dim(title, 12, null, false));
@@ -309,7 +310,6 @@ internal sealed class CctvView : UserControl
     {
         var box = new StackPanel();
         box.Children.Add(UiKit.SectionHead("감지 타임라인"));
-        box.Children.Add(UiKit.Dim("줄을 누르면 판정 근거를 볼 수 있습니다.", 12));
 
         // 한 줄: 검색창 · 정확히 일치 · (눈깔이 둘 이상이면) 눈깔 선택
         var bar = new DockPanel { Margin = new Thickness(0, 10, 0, 8) };
@@ -389,9 +389,11 @@ internal sealed class CctvView : UserControl
         if (shown.Count == 0)
         {
             var searching = Norm(_search.Text).Length > 0;
+            var capped = d.Events.Count >= Math.Min(_svc.Settings.TimelineLimit, 2000);
+            var scope = capped ? $"최근 {d.Events.Count}건" : "현재 조건";
             _timelineList.Children.Add(UiKit.Dim(_categories.Count == 0 ? "표시할 항목을 선택해주세요. 위의 분류 버튼으로 여러 항목을 함께 볼 수 있습니다."
-                : searching ? $"검색 결과가 없습니다. 현재 조건 안에서 \"{_search.Text.Trim()}\"을(를) 찾지 못했습니다."
-                : d.Events.Count == 0 ? "아직 판정된 이벤트가 없습니다. 분석을 켜고 인식 영역을 확인하면 폴더 이미지를 시간순으로 분석합니다." : "선택한 조건의 기록이 없습니다.", 12, new Thickness(0, 14, 0, 6)));
+                : searching ? $"검색 결과가 없습니다. {scope} 안에서 \"{_search.Text.Trim()}\"을(를) 찾지 못했습니다."
+                : d.Events.Count == 0 ? "아직 판정된 이벤트가 없습니다. 분석을 켜고 인식 영역을 확인하면 폴더 이미지를 시간순으로 분석합니다." : capped ? $"최근 {d.Events.Count}건 안에는 선택한 조건의 기록이 없습니다." : "선택한 조건의 기록이 없습니다.", 12, new Thickness(0, 14, 0, 6)));
             return;
         }
 
@@ -417,21 +419,23 @@ internal sealed class CctvView : UserControl
         return bar;
     }
 
+    private static string TimeWithDate(string iso) => iso.Length < 19 ? iso : iso.StartsWith(DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)) ? iso.Substring(11, 8) : iso.Substring(5, 5) + " " + iso.Substring(11, 8);
+
     private UIElement TimelineRow(EventRow e, ViewData d)
     {
         var g = new Grid();
-        foreach (var w in new[] { 70.0, 108.0, -1, 76.0, 120.0, 70.0 })
+        foreach (var w in new[] { 100.0, 108.0, -1, 76.0, 120.0 })
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = w < 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
 
-        var time = UiKit.Dim(Summaries.Time(e.Time), 12, null, false); Grid.SetColumn(time, 0); g.Children.Add(time);
+        var time = UiKit.Dim(TimeWithDate(e.Time), 12, null, false); Grid.SetColumn(time, 0); g.Children.Add(time);
 
+        var marker = CctvStore.IsMarker(e.Type);
         var typeBox = new StackPanel { Orientation = Orientation.Horizontal };
-        typeBox.Children.Add(UiKit.TintChip(EventPresentation.Label(e.Type), EventPresentation.Color(e.Type), EventPresentation.Rule(e)));
+        typeBox.Children.Add(UiKit.TintChip(EventPresentation.Label(e.Type), EventPresentation.Color(e.Type), marker ? null : EventPresentation.Rule(e)));
         Grid.SetColumn(typeBox, 1); g.Children.Add(typeBox);
 
         var main = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var nameLine = new StackPanel { Orientation = Orientation.Horizontal };
-        var marker = CctvStore.IsMarker(e.Type);
         nameLine.Children.Add(UiKit.Text(marker ? EventPresentation.MarkerTitle(e) : e.Type.StartsWith("signature_") ? (e.Character ?? "---") : (e.Character ?? "미확인 대상"), 13.5, FontWeights.SemiBold));
         if (marker && EventPresentation.MarkerSuffix(e) is { } suffix) nameLine.Children.Add(UiKit.Dim(suffix, 12, new Thickness(10, 1, 0, 0), false));   // 언제 일시중지/재시작했는지 (실제 시각)
         if (EventPresentation.Verification(e) is { } v) nameLine.Children.Add(UiKit.Chip(v, v == "확정" ? UiKit.GoodBg : UiKit.WarnBg, v == "확정" ? UiKit.Good : UiKit.Warn, null, new Thickness(8, 0, 0, 0)));
@@ -441,7 +445,6 @@ internal sealed class CctvView : UserControl
 
         var corp = UiKit.Text(e.Corporation is { Length: > 0 } c && d.Canonical(c) is var t && t != "미확인" ? $"[{t}]" : "—", 12.5, FontWeights.SemiBold, UiKit.AccentText); Grid.SetColumn(corp, 3); g.Children.Add(corp);
         var src = UiKit.Dim(e.WatcherLabel ?? "미지정 눈깔", 12, null, false); src.TextTrimming = TextTrimming.CharacterEllipsis; Grid.SetColumn(src, 4); g.Children.Add(src);
-        var conf = UiKit.Dim(marker ? "" : $"인식 {Math.Round((e.Confidence ?? 0) * 100)}%", 11.5, null, false); Grid.SetColumn(conf, 5); g.Children.Add(conf);
 
         var row = new RowButton(g);
         if (marker) { row.Cursor = Cursors.Arrow; return row; }   // 표식은 판정 근거가 없다

@@ -25,6 +25,7 @@ internal sealed class RegionPreviewWindow : Window
         _service = service; _cfg = cfg; _character = character;
         Title = $"감시 영역 미리보기 — {character}";
         ShowInTaskbar = false;
+        Argus.Ui.DarkTitleBar.Apply(this);
         ResizeMode = ResizeMode.CanResizeWithGrip;
         MinWidth = 320; MinHeight = 160;
 
@@ -37,7 +38,6 @@ internal sealed class RegionPreviewWindow : Window
         if (TryFindResource("Text") is Brush fg) { Foreground = fg; _info.Foreground = TryFindResource("TextDim") as Brush ?? fg; }
 
         var rootPanel = new DockPanel { Margin = new Thickness(12) };
-        _info.Text = $"{cfg.RoiW} × {cfg.RoiH}  @ ({cfg.RoiX}, {cfg.RoiY})  ·  0.5초마다 갱신";
         _info.Margin = new Thickness(0, 0, 0, 8);
         DockPanel.SetDock(_info, Dock.Top);
         rootPanel.Children.Add(_info);
@@ -58,6 +58,7 @@ internal sealed class RegionPreviewWindow : Window
     {
         if (_busy) return;
         _busy = true;
+        _info.Text = $"{_cfg.RoiW} × {_cfg.RoiH}  @ ({_cfg.RoiX}, {_cfg.RoiY})";
         try
         {
             var frame = await Task.Run(() => _service.Grab(_character));
@@ -69,10 +70,7 @@ internal sealed class RegionPreviewWindow : Window
             _note.Text = "";
 
             // 창 크기가 바뀌어 영역이 벗어나면 잘라 맞춘다 (모니터와 같은 규칙).
-            var x = Math.Clamp(_cfg.RoiX, 0, frame.Width - 1);
-            var y = Math.Clamp(_cfg.RoiY, 0, frame.Height - 1);
-            var w = Math.Clamp(_cfg.RoiW, 1, frame.Width - x);
-            var h = Math.Clamp(_cfg.RoiH, 1, frame.Height - y);
+            var (x, y, w, h) = _cfg.ResolveRoi(frame.Width, frame.Height);
             var pixels = ChangeDetector.Crop(frame, x, y, w, h);
             var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgr32, null, pixels, w * 4);
             bmp.Freeze();

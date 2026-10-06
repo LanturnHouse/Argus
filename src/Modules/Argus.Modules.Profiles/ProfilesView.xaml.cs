@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 
 namespace Argus.Modules.Profiles;
 
@@ -32,7 +31,7 @@ public partial class ProfilesView : UserControl
 
     private void Tab_Click(object sender, RoutedEventArgs e)
     {
-        if (TabTemplates.IsChecked == true) Show(_templates, "EVE 설정 폴더의 캐릭터 설정을 Argus 안에 저장해 둡니다. 저장한 뒤에는 EVE 폴더의 원본이 바뀌어도 영향이 없습니다.");
+        if (TabTemplates.IsChecked == true) Show(_templates, "EVE 설정 폴더의 캐릭터 설정을 Argus 안에 저장해 둡니다.");
         else if (TabPresets.IsChecked == true) Show(_presets, "캐릭터별로 적용할 설정파일을 묶어 프리셋으로 저장합니다.");
         else Show(_apply, "프리셋을 적용하면 EVE 설정 폴더의 캐릭터 파일을 덮어씁니다. 실행 중인 캐릭터는 건너뜁니다.");
     }

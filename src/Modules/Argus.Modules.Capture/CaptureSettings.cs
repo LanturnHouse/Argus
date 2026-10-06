@@ -27,6 +27,14 @@ public sealed class ClientCaptureConfig
     public bool Beep { get; set; } = true;
 
     public bool HasRoi => RoiW > 0 && RoiH > 0;
+
+    /// <summary>창 크기가 바뀌어 영역이 프레임 밖으로 나가면 잘라 맞춘 영역을 반환한다.</summary>
+    public (int X, int Y, int W, int H) ResolveRoi(int frameW, int frameH)
+    {
+        var x = Math.Clamp(RoiX, 0, frameW - 1);
+        var y = Math.Clamp(RoiY, 0, frameH - 1);
+        return (x, y, Math.Clamp(RoiW, 1, frameW - x), Math.Clamp(RoiH, 1, frameH - y));
+    }
 }
 
 public sealed class CaptureSettings

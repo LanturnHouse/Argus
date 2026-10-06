@@ -2,7 +2,6 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ===== 팔레트 ===== -->
-    <Color x:Key="AccentColor">#4C8DFF</Color>
     <SolidColorBrush x:Key="Bg" Color="#0E1014"/>
     <SolidColorBrush x:Key="Surface" Color="#161920"/>
     <SolidColorBrush x:Key="Surface2" Color="#1E222B"/>
@@ -446,8 +445,14 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ToolTip">
                     <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="1" CornerRadius="6" Padding="10,6">
-                        <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            BorderThickness="1" CornerRadius="6" Padding="10,6" MaxWidth="420">
+                        <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}">
+                            <ContentPresenter.Resources>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Setter Property="TextWrapping" Value="Wrap"/>
+                                </Style>
+                            </ContentPresenter.Resources>
+                        </ContentPresenter>
                     </Border>
                 </ControlTemplate>
             </Setter.Value>

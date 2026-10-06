@@ -15,7 +15,7 @@ internal static class UiKit
         return b;
     }
 
-    public static readonly Brush Panel = Hex("#161920"), Panel2 = Hex("#1E222B"), Panel3 = Hex("#272C37"), Line = Hex("#2A2F3A"), TextBrush = Hex("#E8EAF0"), DimBrush = Hex("#8B93A5"),
+    public static readonly Brush Panel = Hex("#161920"), Panel2 = Hex("#1E222B"), Line = Hex("#2A2F3A"), TextBrush = Hex("#E8EAF0"), DimBrush = Hex("#8B93A5"),
         Accent = Hex("#4C8DFF"), AccentSoft = Hex("#1F3358"), AccentText = Hex("#9CC1FF"), Good = Hex("#6FD6A0"), GoodBg = Hex("#163527"), Warn = Hex("#F5C15A"), WarnBg = Hex("#3A2F14"),
         Bad = Hex("#FF8A8F"), BadBg = Hex("#3B1B1F"), NeutralBg = Hex("#272C37"), NeutralText = Hex("#B7BECE");
 
@@ -117,8 +117,6 @@ internal sealed class FilterChip : Border
         SetActive(active);
         MouseLeftButtonUp += (_, _) => { SetActive(!_active); Toggled?.Invoke(_active); };
     }
-
-    public bool IsActive => _active;
 
     public void SetActive(bool active)
     {

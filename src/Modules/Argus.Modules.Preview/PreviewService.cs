@@ -49,6 +49,7 @@ public sealed partial class PreviewService : IDisposable
         if (Settings.Presets.All(p => p.Id != Settings.ActivePresetId)) Settings.ActivePresetId = Settings.Presets[0].Id;
         Settings.Opacity = Math.Clamp(Settings.Opacity, 0.3, 1.0);
         Settings.DefaultWidth = Math.Clamp(Settings.DefaultWidth, TileGeometry.MinWidth, TileGeometry.MaxWidth);
+        foreach (var p in Settings.Presets) foreach (var l in p.Clients) { l.W = Math.Clamp(l.W, TileGeometry.MinWidth, TileGeometry.MaxWidth); if (l.H <= 0) l.H = (int)Math.Round(l.W * 9 / 16.0); }
         if (!Settings.HotkeysSeeded)
         {
             // 처음 한 번만: 마우스 옆 버튼 앞으로 = 다음, 뒤로 = 이전. 이후 프리셋마다 자유롭게 바꾼다.
@@ -285,7 +286,7 @@ public sealed partial class PreviewService : IDisposable
     private readonly Dictionary<string, long> _surgeDismissed = new(StringComparer.OrdinalIgnoreCase);
 
     private bool SurgeWithin(CombatSnapshot? s, ClientLayout l, int seconds) =>
-        s != null && l.HudSurge && s.SurgeAt != long.MinValue && Environment.TickCount64 - s.SurgeAt <= seconds * 1000L
+        s != null && s.SurgeAt != long.MinValue && Environment.TickCount64 - s.SurgeAt <= seconds * 1000L
         && (!_surgeDismissed.TryGetValue(l.Character, out var dismissed) || s.SurgeAt > dismissed);
 
     /// <summary>이 클라이언트의 지금 레드박싱 이벤트를 끝낸다 (붉은 색조, 전환 키 안내, 레드박싱 전환 대상에서 빠진다).</summary>
@@ -301,12 +302,15 @@ public sealed partial class PreviewService : IDisposable
     /// <summary>다음/이전 사이클에 포함된 클라이언트 중 몇 번째인지 (사이클 밖이면 null).</summary>
     public int? CycleNumber(string character)
     {
-        var order = Clients().Where(c => c.Layout.InCycle).Select(c => c.Character).ToList();
+        var order = Clients().Where(c => c.Layout.InCycle && !c.LoggedOut).Select(c => c.Character).ToList();
         var i = order.FindIndex(n => string.Equals(n, character, StringComparison.OrdinalIgnoreCase));
         return i < 0 ? null : i + 1;
     }
 
-    private bool SurgeActive(CombatSnapshot? s, ClientLayout l) => SurgeWithin(s, l, Settings.SurgeSeconds);
+    private bool SurgeActive(CombatSnapshot? s, ClientLayout l) => l.HudSurge && SurgeWithin(s, l, Settings.SurgeSeconds);
+
+    /// <summary>지금 레드박싱 중인지 (대시보드 칩용). 클라이언트별 레드박싱 경고 설정과 상관없이 유지 시간과 전환 키 이동만 따진다.</summary>
+    internal bool IsSurging(ClientInfo info) => SurgeWithin(SnapshotFor(info.Character), info.Layout, Settings.SurgeSeconds);
 
     /// <summary>지금 레드박싱 전환 단축키가 동작하는 클라이언트들(레드박싱 경고를 켠 것만), 먼저 감지된 순서.</summary>
     internal List<(string Character, long At)> SurgeOrder() =>
@@ -322,7 +326,8 @@ public sealed partial class PreviewService : IDisposable
         var sig = string.Join("|", ActivePreset.Clients.Where(l => _tiles.ContainsKey(l.Character)).Select(l =>
         {
             var s = SnapshotFor(l.Character);
-            return $"{l.Character}:{(SurgeActive(s, l) ? 1 : 0)}{(SurgeActive(s, l) ? 1 : 0)}:{s?.SurgeAt}";
+            var active = SurgeActive(s, l) ? 1 : 0;
+            return $"{l.Character}:{active}:{s?.SurgeAt}";
         }));
         if (sig == _surgeSig && !force) return;
         _surgeSig = sig;
@@ -390,7 +395,7 @@ public sealed partial class PreviewService : IDisposable
 
     // ---------- UI 가 호출하는 동작 ----------
 
-    public sealed record ClientInfo(string Character, ClientLayout Layout);
+    public sealed record ClientInfo(string Character, ClientLayout Layout, bool LoggedOut = false);
 
     /// <summary>실행 중인 클라이언트와 활성 프리셋의 배치.</summary>
     public List<ClientInfo> Clients()
@@ -398,7 +403,7 @@ public sealed partial class PreviewService : IDisposable
         foreach (var t in _tiles.Values) GetOrCreateLayout(t);   // 새 클라이언트는 목록 끝에 붙는다
         return [.. ActivePreset.Clients
             .Where(l => _tiles.ContainsKey(l.Character))
-            .Select(l => new ClientInfo(l.Character, l))];
+            .Select(l => new ClientInfo(l.Character, l, _loggedOut.Contains(l.Character)))];
     }
 
     public void SetEnabled(bool enabled)

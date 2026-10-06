@@ -12,7 +12,9 @@ public sealed class HotkeyTrigger
     public MouseButtonKind Mouse { get; set; }
     public Mods Mods { get; set; }
 
+    [System.Text.Json.Serialization.JsonIgnore]
     public bool IsEmpty => Key == 0 && Mouse == MouseButtonKind.None;
+    [System.Text.Json.Serialization.JsonIgnore]
     public bool IsMouse => Mouse != MouseButtonKind.None;
 
     /// <summary>보조키를 뺀 키(또는 버튼)가 같은가.</summary>
@@ -40,11 +42,19 @@ public sealed class HotkeyTrigger
         return string.Join(" + ", parts);
     }
 
+    // 표시 전용 (저장 값은 가상 키 코드). 배열마다 글자가 달라지는 Oem1/2/4~7 은 매핑하지 않는다.
+    private static readonly Dictionary<string, string> KeyLabels = new()
+    {
+        ["Next"] = "PageDown", ["Prior"] = "PageUp", ["Return"] = "Enter", ["Back"] = "Backspace",
+        ["Capital"] = "CapsLock", ["Snapshot"] = "PrintScreen", ["Scroll"] = "ScrollLock", ["Oem3"] = "`",
+    };
+
     private static string KeyName(int vk)
     {
         var s = System.Windows.Input.KeyInterop.KeyFromVirtualKey(vk).ToString();
+        if (s == "None") return $"0x{vk:X2}";
         if (s.Length == 2 && s[0] == 'D' && char.IsDigit(s[1])) return s[1].ToString();
-        return s == "None" ? $"0x{vk:X2}" : s;
+        return KeyLabels.TryGetValue(s, out var label) ? label : s;
     }
 }
 

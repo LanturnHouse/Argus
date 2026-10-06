@@ -34,7 +34,7 @@ internal sealed class PreviewSettingsView : UserControl
         foreach (var (label, w) in Sizes) _size.Items.Add(new ComboBoxItem { Content = label, Tag = w });
 
         var root = new StackPanel();
-        root.Children.Add(Section("표시 조건", "EVE 가 맨 앞에 있을 때만 프리뷰를 보여줍니다. Argus 창이 앞에 있을 때도 보입니다.", _onlyEve));
+        root.Children.Add(Section("표시 조건", "Argus 창이 앞에 있을 때도 보입니다.", _onlyEve));
         root.Children.Add(Section("기본 프리뷰 크기", "새 클라이언트의 프리뷰 가로 크기입니다. 세로는 화면 비율로 정해집니다.", _size));
 
         var opacityRow = new DockPanel();
@@ -44,11 +44,11 @@ internal sealed class PreviewSettingsView : UserControl
 
         root.Children.Add(Section("HUD 수치 바 투명도", "받는 DPS · LOGI · 뉴트 표시", Row(_barOpacity, _barOpacityText)));
 
-        root.Children.Add(Section("활성 클라이언트", "사용 중인 클라이언트의 프리뷰는 숨길 수 있습니다.", _hideActive));
+        root.Children.Add(Section("활성 클라이언트", null, _hideActive));
 
         root.Children.Add(Section("레드박싱: 유지 시간", "레드박싱 후 이 시간 동안 붉은 색조와 전환 키 안내가 보이고, 레드박싱 난 클라이언트로 전환하는 단축키가 동작합니다. 여러 곳이면 먼저 감지된 쪽부터 갑니다.", _surge));
-        root.Children.Add(Section("레드박싱: 깜빡임 주기", "짧을수록 빠르게 깜빡입니다.", _surgeFlash));
-        root.Children.Add(Section("레드박싱: 전환 키 안내", "레드박싱 난 프리뷰 가운데에 전환 키를 표시합니다.", _surgeHint));
+        root.Children.Add(Section("레드박싱: 깜빡임 주기", null, _surgeFlash));
+        root.Children.Add(Section("레드박싱: 전환 키 안내", null, _surgeHint));
 
         var hkBox = new StackPanel();
         _hkOnlyEve.Margin = new Thickness(0, 8, 0, 0);
@@ -107,13 +107,14 @@ internal sealed class PreviewSettingsView : UserControl
         return row;
     }
 
-    private static UIElement Section(string title, string desc, UIElement control)
+    private static UIElement Section(string title, string? desc, UIElement control)
     {
         var t = new TextBlock { Text = title, FontWeight = FontWeights.SemiBold };
-        var d = new TextBlock { Text = desc, Margin = new Thickness(0, 2, 0, 0) };
+        var d = new TextBlock { Text = desc ?? "", Margin = new Thickness(0, 2, 0, 0) };
         d.SetResourceReference(FrameworkElement.StyleProperty, "Dim");
         var sp = new StackPanel { Margin = new Thickness(0, 0, 0, 16) };
-        sp.Children.Add(t); sp.Children.Add(d);
+        sp.Children.Add(t);
+        if (!string.IsNullOrEmpty(desc)) sp.Children.Add(d);
         if (control is FrameworkElement fe) fe.Margin = new Thickness(0, 8, 0, 0);
         sp.Children.Add(control);
         return sp;

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -17,6 +18,7 @@ internal static class DialogKit
             WindowStartupLocation = owner != null ? WindowStartupLocation.CenterOwner : WindowStartupLocation.CenterScreen,
             Background = UiKit.Hex("#0E1014"), Foreground = UiKit.TextBrush, Content = content, MinWidth = 420, MinHeight = 300,
         };
+        w.KeyDown += (_, e) => { if (e.Key == Key.Escape && !e.Handled) { e.Handled = true; w.Close(); } };
         w.SourceInitialized += (_, _) =>
         {
             try { var hwnd = new System.Windows.Interop.WindowInteropHelper(w).Handle; var on = 1; DwmSetWindowAttribute(hwnd, 20, ref on, sizeof(int)); } catch { /* 다크 제목 표시줄은 선택 사항 */ }
@@ -81,7 +83,7 @@ internal static class EvidenceWindow
 
         var right = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
         var verification = EventPresentation.Verification(e);
-        right.Children.Add(DialogKit.Fact("판정", $"{EventPresentation.Label(e.Type)}{(verification != null ? $" · {verification}" : "")} · 인식 신뢰도 {Math.Round((e.Confidence ?? 0) * 100)}%"));
+        right.Children.Add(DialogKit.Fact("판정", $"{EventPresentation.Label(e.Type)}{(verification != null ? $" · {verification}" : "")}"));
         right.Children.Add(DialogKit.Fact("캐릭터 / 콥 / 함선", $"{e.Character ?? "미확인"} · {(e.Corporation is { Length: > 0 } c && canonical(c) is var t && t != "미확인" ? $"[{t}]" : "—")}\n{EventPresentation.Detail(e)}"));
         right.Children.Add(DialogKit.Fact("감시 눈깔", e.WatcherLabel ?? "미지정 눈깔"));
         right.Children.Add(DialogKit.Fact("판정 시각", e.Time.Replace("T", " ")));
@@ -197,7 +199,7 @@ internal static class SummaryWindow
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal }; Grid.SetColumn(buttons, 3);
                 var src = svc.Store.ImagePath(p.ImageId);
                 buttons.Children.Add(UiKit.Button("원본 이미지", () => { if (src != null) try { Process.Start(new ProcessStartInfo(src) { UseShellExecute = true }); } catch { } }, null, double.NaN, src != null).Also(b => { b.Padding = new Thickness(8, 2, 8, 2); }));
-                var cropPath = svc.Store.Image(p.ImageId)?.Observations.FirstOrDefault(o => o.Id == p.ObservationId).Payload.SourceCropPath;
+                var cropPath = svc.Store.Image(p.ImageId)?.Observations.FirstOrDefault(o => o.Id == p.ObservationId).Payload?.SourceCropPath;
                 buttons.Children.Add(UiKit.Button("인식 영역", () => { if (cropPath != null) try { Process.Start(new ProcessStartInfo(cropPath) { UseShellExecute = true }); } catch { } }, null, double.NaN, cropPath != null && File.Exists(cropPath)).Also(b => { b.Padding = new Thickness(8, 2, 8, 2); }));
                 g.Children.Add(buttons);
                 box.Children.Add(g);

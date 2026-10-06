@@ -66,7 +66,8 @@ public static class TextRules
 
         if (kind == RegionKind.Probe)
         {
-            if (vision["rows"] is not JsonArray rows) return fallback;
+            var rows = vision["rows"] as JsonArray;
+            if (rows == null) { if (vision["visible"] is JsonValue vv && vv.TryGetValue<bool>(out var seen) && !seen) rows = []; else return fallback; }
             var signatures = rows.OfType<JsonObject>().Select(r => new { Id = NormalizeProbeId(S(r["id"])), Row = r }).Where(x => x.Id != null)
                 .Select(x => new SignatureRow { Id = x.Id!, Distance = CleanText(S(x.Row["distance"])), Name = CleanText(S(x.Row["name"])), Group = CleanText(S(x.Row["group"])), Raw = "", Confidence = 0.9 }).ToList();
             return Copy(fallback, f => { f.Signatures = signatures; f.ProbeDetected = IsTrue(vision["visible"]) || signatures.Count > 0; });
@@ -74,7 +75,8 @@ public static class TextRules
 
         if (kind == RegionKind.Overview)
         {
-            if (vision["rows"] is not JsonArray rows) return fallback;
+            var rows = vision["rows"] as JsonArray;
+            if (rows == null) { if (vision["visible"] is JsonValue vv && vv.TryGetValue<bool>(out var seen) && !seen) rows = []; else return fallback; }
             // 다른 줄의 함선 이름이 콥 칸에 들어온 경우를 걸러 내기 위해, 이 화면에 나온 함선 이름을 모아 둔다.
             var shipNames = rows.OfType<JsonObject>().Select(r => CleanText(S(r["ship"])).TrimEnd('*', ' ').ToUpperInvariant()).Where(n => n.Length > 0).ToHashSet();
             var overview = rows.OfType<JsonObject>().Select(r =>
@@ -87,14 +89,19 @@ public static class TextRules
                     Speed = modelSpeed, Raw = "", Confidence = 0.9,
                 };
             }).Where(r => r.Name.Length > 0).ToList();
-            return Copy(fallback, f => { f.OverviewRows = overview; f.OverviewDetected = IsTrue(vision["visible"]) || overview.Count > 0; });
+            return Copy(fallback, f => { f.OverviewRows = overview; f.OverviewDetected = IsTrue(vision["visible"]) || overview.Count > 0; f.OverviewTruncated = IsTrue(vision["_truncated"]) ? true : null; });
         }
 
         if (kind == RegionKind.Dock)
         {
-            if (vision["count"] is JsonValue v && v.TryGetValue<double>(out var c) && !double.IsNaN(c) && !double.IsInfinity(c))
-                return Copy(fallback, f => f.DockCount = (int)c);
-            return fallback;
+            if (!vision.ContainsKey("count")) return fallback;
+            int? count = null;
+            if (vision["count"] is JsonValue v)
+            {
+                if (v.TryGetValue<double>(out var c) && !double.IsNaN(c) && !double.IsInfinity(c) && c >= 0 && c <= int.MaxValue) count = (int)c;
+                else if (v.TryGetValue<string>(out var s) && int.TryParse(s.Trim().Trim('[', ']', ' '), NumberStyles.None, CultureInfo.InvariantCulture, out var n)) count = n;
+            }
+            return Copy(fallback, f => f.DockCount = count ?? f.DockCount);   // 못 읽으면 기존 값 유지
         }
 
         return fallback;
@@ -113,7 +120,7 @@ public static class TextRules
     {
         var copy = new RegionFields
         {
-            Lines = src.Lines, OverviewRows = src.OverviewRows, OverviewDetected = src.OverviewDetected,
+            Lines = src.Lines, OverviewRows = src.OverviewRows, OverviewDetected = src.OverviewDetected, OverviewTruncated = src.OverviewTruncated,
             Signatures = src.Signatures, ProbeDetected = src.ProbeDetected, DockCount = src.DockCount,
         };
         change(copy);

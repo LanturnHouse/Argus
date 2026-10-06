@@ -22,6 +22,10 @@ internal sealed class CctvSettingsView : UserControl
     private readonly TextBlock _data = new() { TextWrapping = TextWrapping.Wrap };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(3) };
     private bool _loading;
+    private long _cropBytes = -1;
+    private DateTime _cropAt = DateTime.MinValue;
+    private bool _cropBusy;
+    private string _dataHead = "";
 
     private readonly bool _analysisTab;
 
@@ -39,7 +43,8 @@ internal sealed class CctvSettingsView : UserControl
             DockPanel.SetDock(refresh, Dock.Right); DockPanel.SetDock(_modelPick, Dock.Right);
             _modelPick.Width = 200; _modelPick.MinWidth = 0; _model.MinWidth = 0;
             modelRow.Children.Add(refresh); modelRow.Children.Add(_modelPick); modelRow.Children.Add(_model);
-            root.Children.Add(UiKit.Section("비전 모델", "이미지를 읽을 수 있는(비전) 모델이어야 합니다. 권장: qwen2.5vl:7b (그래픽 메모리 약 6GB). 메모리를 넘는 큰 모델은 매우 느려집니다.", modelRow));
+            var modelBox = new StackPanel(); modelBox.Children.Add(modelRow); modelBox.Children.Add(_testResult);
+            root.Children.Add(UiKit.Section("비전 모델", "이미지를 읽을 수 있는(비전) 모델이어야 합니다. 권장: qwen2.5vl:7b (그래픽 메모리 약 6GB). 메모리를 넘는 큰 모델은 매우 느려집니다.", modelBox));
 
             var dataBox = new StackPanel();
             dataBox.Children.Add(_data);
@@ -49,9 +54,6 @@ internal sealed class CctvSettingsView : UserControl
         else
         {
             // 설정 탭(CCTV 아래 분석): 나머지 분석 설정.
-            root.Children.Add(UiKit.Section("모델 올리기 · 내리기",
-                "읽을 스크린샷이 있을 때만 모델을 올리고, 대기가 끝나면 아래 유예 시간 뒤에 내립니다. 분석을 끄거나 Argus 를 닫아도 내립니다.", new Border()));
-
             var hostRow = new DockPanel();
             var test = UiKit.Button("연결 확인", async () => await TestAsync()); test.Margin = new Thickness(8, 0, 0, 0);
             DockPanel.SetDock(test, Dock.Right);
@@ -82,7 +84,8 @@ internal sealed class CctvSettingsView : UserControl
             if (_analysisTab) await LoadModelsAsync(quiet: true); else await RefreshLoadedAsync();
         };
         Unloaded += (_, _) => _timer.Stop();
-        _timer.Tick += async (_, _) => { if (_analysisTab) RefreshData(); else await RefreshLoadedAsync(); };
+        _timer.Tick += async (_, _) => { if (_analysisTab) { if (IsVisible) RefreshData(); } else await RefreshLoadedAsync(); };
+        IsVisibleChanged += (_, e) => { if (_analysisTab && IsLoaded && e.NewValue is true) RefreshData(); };
 
         _host.LostFocus += (_, _) => { if (!_loading) { _svc.Settings.Vision.Host = _host.Text.Trim(); Save(); } };
         _model.LostFocus += (_, _) => CommitModel();
@@ -111,17 +114,34 @@ internal sealed class CctvSettingsView : UserControl
         RefreshData();
     }
 
-    private void RefreshData()
+    private void RefreshData(bool forceCrop = false)
     {
+        if (!_analysisTab) return;
         try
         {
             var st = _svc.Status();
-            long cropBytes = 0;
-            try { if (Directory.Exists(_svc.CropRoot)) cropBytes = new DirectoryInfo(_svc.CropRoot).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length); } catch { /* 읽는 중 삭제됨 */ }
-            _data.Text = $"이미지 {st.ImageCount:N0}장 · 대기 {st.Counts.Pending:N0} · 완료 {st.Counts.Processed:N0} · 실패 {st.Counts.Failed:N0} · 저장된 인식 영역 이미지 {cropBytes / 1024.0 / 1024.0:N1}MB";
+            _dataHead = $"이미지 {st.ImageCount:N0}장 · 대기 {st.Counts.Pending:N0} · 완료 {st.Counts.Processed:N0} · 실패 {st.Counts.Failed:N0}";
+            ShowData();
+            if (!_cropBusy && (forceCrop || DateTime.UtcNow - _cropAt > TimeSpan.FromSeconds(60)))
+            {
+                _cropBusy = true;
+                var root = _svc.CropRoot;
+                _ = Task.Run(() =>
+                {
+                    long b = 0;
+                    try { if (Directory.Exists(root)) b = new DirectoryInfo(root).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length); } catch { /* 읽는 중 삭제됨 */ }
+                    return b;
+                }).ContinueWith(t =>
+                {
+                    _cropBusy = false; _cropAt = DateTime.UtcNow;
+                    if (t.IsCompletedSuccessfully) { _cropBytes = t.Result; ShowData(); }
+                }, TaskScheduler.FromCurrentSynchronizationContext());
+            }
         }
         catch { /* 화면 전환 중 */ }
     }
+
+    private void ShowData() => _data.Text = _cropBytes < 0 ? _dataHead : $"{_dataHead} · 저장된 인식 영역 이미지 {_cropBytes / 1024.0 / 1024.0:N1}MB";
 
     private async Task TestAsync()
     {
@@ -144,7 +164,7 @@ internal sealed class CctvSettingsView : UserControl
             foreach (var m in models) _modelPick.Items.Add(m);
             _modelPick.SelectedItem = models.FirstOrDefault(m => string.Equals(m, current, StringComparison.OrdinalIgnoreCase));
             _loading = false;
-            if (!quiet) _testResult.Text = $"설치된 모델 {models.Count}개를 불러왔습니다."; _testResult.Margin = new Thickness(0, 6, 0, 0);
+            if (!quiet) { _testResult.Text = $"설치된 모델 {models.Count}개를 불러왔습니다."; _testResult.Margin = new Thickness(0, 6, 0, 0); _testResult.Foreground = UiKit.Good; }
         }
         catch (Exception ex) { _loading = false; if (!quiet) { _testResult.Text = ex is HttpRequestException ? "Ollama 에 연결할 수 없습니다." : ex.Message; _testResult.Margin = new Thickness(0, 6, 0, 0); _testResult.Foreground = UiKit.Bad; } }
     }
@@ -171,6 +191,7 @@ internal sealed class CctvSettingsView : UserControl
         var a = MessageBox.Show("분석 기록(이벤트, 현재 대상, 시그니처, 이미지 목록)을 모두 지우고, 폴더의 이미지를 처음부터 다시 분석하게 할까요?\n원본 PNG 는 삭제하지 않습니다.", "분석 기록 초기화", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (a != MessageBoxResult.Yes) return;
         _svc.ResetAll();
+        _cropBytes = 0; _cropAt = DateTime.UtcNow;
         RefreshData();
     }
 }

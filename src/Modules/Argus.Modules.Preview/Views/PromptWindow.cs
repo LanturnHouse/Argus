@@ -16,6 +16,7 @@ internal sealed class PromptWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
+        Argus.Ui.DarkTitleBar.Apply(this);
         SetResourceReference(BackgroundProperty, "Bg");
         SetResourceReference(ForegroundProperty, "Text");
 

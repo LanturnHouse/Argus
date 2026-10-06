@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Argus.Core.Clients;
@@ -44,6 +45,19 @@ public static class WindowFocus
     }
 
     public static nint Foreground => GetForegroundWindow();
+
+    /// <summary>이 창이 EVE 클라이언트(exefile) 프로세스의 창인가. 로그인·캐릭터 선택 창처럼 아직 목록에 없는 창도 판별한다.</summary>
+    public static bool IsEveWindow(nint hwnd)
+    {
+        if (hwnd == 0) return false;
+        try
+        {
+            GetWindowThreadProcessId(hwnd, out var pid);
+            using var p = Process.GetProcessById((int)pid);
+            return p.ProcessName.Equals("exefile", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
 
     [DllImport("user32.dll")] private static extern bool IsWindow(nint h);
     [DllImport("user32.dll")] private static extern bool IsIconic(nint h);

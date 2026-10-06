@@ -78,9 +78,10 @@ internal sealed class CombatLogSettingsView : UserControl
     private void RefreshStatus()
     {
         if (!Directory.Exists(_svc.FolderPath)) { _status.Text = "로그 폴더를 찾을 수 없습니다. 위에서 폴더를 지정하세요."; return; }
+        if (!_svc.CombatMode) { _status.Text = "비전투 모드: 로그를 읽지 않습니다."; return; }
         var rows = _svc.Status();
         _status.Text = rows.Count == 0
-            ? "읽고 있는 로그가 없습니다. (실행 중인 클라이언트가 없거나, 그 캐릭터의 로그 파일을 찾지 못했습니다.)"
+            ? "읽고 있는 로그가 없습니다."
             : string.Join("\n", rows.Select(r => $"{r.Character}  ·  {r.File}  ·  읽은 줄 {r.Lines:N0}  ·  전투 사건 {r.Events:N0}" +
                 (r.LastEvent is { } t ? $"  ·  마지막 {Math.Max(0, (int)(DateTime.Now - t).TotalSeconds)}초 전" : "")));
     }

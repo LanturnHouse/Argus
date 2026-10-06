@@ -57,7 +57,7 @@ public static class EventPresentation
         if (e.Type is "docked" or "undocked" && AsNumber(e.Details["dockCountBefore"]) is { } bd && AsNumber(e.Details["dockCountAfter"]) is { } ad)
             parts.Add($"도킹 수 {bd:0} → {ad:0}");
         if (e.Speed is { } sp && !double.IsNaN(sp)) parts.Add($"{sp:N0} m/s");
-        return parts.Count > 0 ? string.Join(" · ", parts) : "세부 정보 분석 중";
+        return parts.Count > 0 ? string.Join(" · ", parts) : "—";
     }
 
     /// <summary>타임라인 표식(일시중지 · 재시작 · 영역 변경) 의 제목.</summary>
@@ -99,10 +99,11 @@ public static class EventPresentation
         return e.Type switch
         {
             "warp_in" => estimated ? "첫 관측 속도가 고속이지만 이후 감속은 아직 확인되지 않아 추정합니다." : "첫 관측 속도가 높고 다음 유효 관측에서 감속을 확인했습니다.",
-            "warp_out" => estimated ? "오버뷰 이탈 전 마지막 속도가 높지만 가속 변화는 확인되지 않아 추정합니다." : "오버뷰 이탈 전 마지막 속도가 높고 이전 유효 관측보다 상승했습니다.",
-            "docked" => "오버뷰 이탈과 도킹 수 증가가 전후 2프레임 안에서 일치했습니다.",
-            "undocked" => estimated ? "오버뷰에 저속으로 등장했지만 도킹 수 감소는 아직 확인되지 않아 언독 추정입니다." : "오버뷰 진입과 도킹 수 감소가 전후 2프레임 안에서 일치했습니다.",
-            "jump_in" or "jump_out" => "웜홀 반경에서 감지된 뒤 오버뷰 진입·이탈 패턴이 확인됐습니다.",
+            "warp_out" => estimated ? "오버뷰 이탈 전 마지막 속도가 높지만 가속 변화는 확인되지 않아 추정합니다." : "오버뷰 이탈 전 마지막 속도가 높고, 이전 관측보다 상승했거나 처음 저속이었다가 올라갔습니다.",
+            "docked" => "오버뷰 이탈과 도킹 수 증가가 6초 안에 일치했습니다.",
+            "undocked" => estimated ? "오버뷰에 저속으로 등장했지만 도킹 수 감소는 아직 확인되지 않아 언독 추정입니다." : "오버뷰 진입과 도킹 수 감소가 6초 안에 일치했습니다.",
+            "jump_in" => "게이트 감시에서 저속으로 처음 관측됐습니다.",
+            "jump_out" => "게이트 감시에서 오버뷰 행이 사라졌습니다 (마지막 속도는 워프 속도 미만).",
             "covop_in" or "covop_out" => "코버트 클로킹이 가능한 함선이라 워프·점프·도킹을 화면만으로 구분하기 어려워 코옵인/코옵아웃으로 묶어 기록했습니다.",
             "appeared" => "오버뷰에 나타났지만 첫 속도를 읽지 못했거나 도킹 수 근거가 없어 '나타남'으로만 기록했습니다.",
             "disappeared" => "오버뷰에서 사라졌지만 워프 속도나 도킹 수 근거가 없어 '사라짐'으로만 기록했습니다.",

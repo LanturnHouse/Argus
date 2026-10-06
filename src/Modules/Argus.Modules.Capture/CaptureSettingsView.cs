@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -29,11 +27,7 @@ internal sealed class CaptureSettingsView : UserControl
             service.OutputFolder = dlg.FolderName;
             box.Text = dlg.FolderName;
         };
-        open.Click += (_, _) =>
-        {
-            Directory.CreateDirectory(service.OutputFolder);
-            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{service.OutputFolder}\"") { UseShellExecute = true });
-        };
+        open.Click += (_, _) => service.OpenOutputFolder();
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
         buttons.Children.Add(change); buttons.Children.Add(open);

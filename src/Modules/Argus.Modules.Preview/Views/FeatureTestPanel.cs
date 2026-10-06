@@ -44,9 +44,9 @@ internal sealed class FeatureTestPanel : UserControl
         root.Children.Add(Field("시험할 항목", items, "고른 항목에 같은 값이 표시됩니다."));
         root.Children.Add(Field("초기 수치", _initial, "시작할 때와 끝난 뒤의 값입니다."));
         root.Children.Add(Field("피크 수치", _peak, "가장 높이 오르는 값입니다. 받는 뉴트는 음수로 두면 노스로 빠는 상황(+ 표시)을 시험할 수 있습니다."));
-        root.Children.Add(Field("상승 시간", _rise, "초기 수치에서 피크 수치까지 천천히 오르는 시간입니다."));
+        root.Children.Add(Field("상승 시간", _rise));
         root.Children.Add(Field("피크 유지 시간", _hold));
-        root.Children.Add(Field("하강 시간", _fall, "피크 수치에서 초기 수치로 다시 내려오는 시간입니다."));
+        root.Children.Add(Field("하강 시간", _fall));
 
         var run = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
         run.Children.Add(Btn("수치 테스트 시작", StartRamp, primary: true));

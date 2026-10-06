@@ -19,8 +19,17 @@ public partial class PresetsTab : UserControl, IReloadable
 
     public void Reload()
     {
+        if (IsDirty()) { OnServiceChanged(); return; }
         ReloadList();
         LoadEditor(_editing);
+    }
+
+    private bool IsDirty()
+    {
+        if (!string.Equals(NameBox.Text.Trim(), _editing?.Name ?? "", StringComparison.Ordinal)) return true;
+        var now = _rows.Where(r => r.Included).Select(r => (r.CharId, r.Template?.Id)).OrderBy(x => x.CharId);
+        var saved = (_editing?.Entries ?? []).Select(e => (e.CharId, (string?)e.TemplateId)).OrderBy(x => x.CharId);
+        return !now.SequenceEqual(saved);
     }
 
     private void ReloadList()
@@ -89,7 +98,7 @@ public partial class PresetsTab : UserControl, IReloadable
             {
                 CharId = f.Id,
                 Name = _svc.Names.Display(f.Id),
-                Detail = CharRow.Format(_svc, f),
+                Detail = CharRow.Format(f),
                 Templates = templates,
                 Included = entry != null,
                 Template = entry == null ? null : templates.FirstOrDefault(t => t.Id == entry.TemplateId),

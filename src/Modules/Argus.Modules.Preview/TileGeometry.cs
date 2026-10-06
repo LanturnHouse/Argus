@@ -97,6 +97,7 @@ internal static class TileGeometry
     /// <summary>비어 있는 자리를 찾는다: 모니터 왼쪽 위에서부터 타일 크기 단위로 오른쪽, 아래로 훑는다.</summary>
     public static (int X, int Y) FindFreeSlot(Rect32 monitor, int w, int h, IReadOnlyList<Rect32> occupied)
     {
+        w = Math.Max(1, w); h = Math.Max(1, h);
         const int margin = 20;
         for (int y = monitor.Top + margin; y + h <= monitor.Bottom; y += h)
             for (int x = monitor.Left + margin; x + w <= monitor.Right; x += w)

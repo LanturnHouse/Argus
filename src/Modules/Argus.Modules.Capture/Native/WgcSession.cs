@@ -29,9 +29,14 @@ internal sealed class WgcSession : IDisposable
     private ID3D11Texture2D? _staging;
     private Frame? _last;
     private Windows.Graphics.SizeInt32 _poolSize;
+    private bool _disposed; // _lock 으로 보호
+    private int _readFailures;
+    private const int MaxReadFailures = 5;
 
     public bool IsMinimized => NativeMethods.IsIconic(_hwnd);
     public bool IsAlive => NativeMethods.IsWindow(_hwnd);
+    /// <summary>프레임 읽기가 연속으로 여러 번 실패했다. 세션을 새로 만들어야 한다.</summary>
+    public bool Faulted => _readFailures >= MaxReadFailures;
 
     private WgcSession(nint hwnd, GraphicsCaptureItem item, Direct3D11CaptureFramePool pool, GraphicsCaptureSession session)
     {
@@ -41,20 +46,25 @@ internal sealed class WgcSession : IDisposable
 
     public static WgcSession? TryCreate(nint hwnd)
     {
+        Direct3D11CaptureFramePool? pool = null;
+        GraphicsCaptureSession? session = null;
         try
         {
             EnsureDevice();
             var item = CreateItemForWindow(hwnd);
-            var pool = Direct3D11CaptureFramePool.CreateFreeThreaded(
+            pool = Direct3D11CaptureFramePool.CreateFreeThreaded(
                 s_winrtDevice!, DirectXPixelFormat.B8G8R8A8UIntNormalized, 2, item.Size);
-            var session = pool.CreateCaptureSession(item);
+            session = pool.CreateCaptureSession(item);
             session.IsCursorCaptureEnabled = false;
             try { session.IsBorderRequired = false; } catch { /* 구형 Windows에서는 미지원 */ }
             session.StartCapture();
             return new WgcSession(hwnd, item, pool, session);
         }
-        catch
+        catch (Exception ex)
         {
+            session?.Dispose();
+            pool?.Dispose();
+            System.Diagnostics.Trace.WriteLine($"[CCTV] 캡처 세션 생성 실패: {ex.Message}");
             return null;
         }
     }
@@ -64,6 +74,7 @@ internal sealed class WgcSession : IDisposable
     {
         lock (_lock)
         {
+            if (_disposed) return null;
             var latest = DrainLatest();
 
             // 세션을 막 만든 직후에는 첫 프레임이 비동기로 도착한다. 첫 프레임만 잠깐 기다린다.
@@ -80,8 +91,13 @@ internal sealed class WgcSession : IDisposable
 
             using (latest)
             {
-                try { _last = Readback(latest) ?? _last; }
-                catch { /* 디바이스 리셋 등 일시적 오류: 직전 프레임 유지 */ }
+                try { _last = Readback(latest) ?? _last; _readFailures = 0; }
+                catch (Exception ex)
+                {
+                    // 디바이스 리셋 등 일시적 오류: 직전 프레임 유지. 연속으로 실패하면 Faulted 로 세션을 다시 만든다.
+                    _readFailures++;
+                    System.Diagnostics.Trace.WriteLine($"[CCTV] 프레임 읽기 실패 ({_readFailures}회 연속): {ex.Message}");
+                }
             }
             return _last;
         }
@@ -151,6 +167,8 @@ internal sealed class WgcSession : IDisposable
     {
         lock (_lock)
         {
+            if (_disposed) return;
+            _disposed = true;
             _session.Dispose();
             _pool.Dispose();
             _staging?.Dispose();
@@ -163,7 +181,13 @@ internal sealed class WgcSession : IDisposable
     {
         lock (GpuLock)
         {
-            if (s_device != null) return;
+            if (s_device != null)
+            {
+                if (!s_device.DeviceRemovedReason.Failure) return;
+                // 장치가 제거됐다(드라이버 리셋 등): 새로 만든다. 이전 장치는 해제하지 않고 GC 에 맡긴다.
+                s_device = null;
+                s_winrtDevice = null;
+            }
             var hr = Vortice.Direct3D11.D3D11.D3D11CreateDevice(
                 null, Vortice.Direct3D.DriverType.Hardware, DeviceCreationFlags.BgraSupport,
                 null, out ID3D11Device? device);

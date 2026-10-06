@@ -70,6 +70,10 @@ public sealed class CctvStore : IDisposable
             CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedupe ON events(watcher_id, event_time, event_type, IFNULL(character_name, ''), IFNULL(details_json, ''));
             CREATE INDEX IF NOT EXISTS idx_regions_watcher ON regions(watcher_id, sort_order);
             CREATE INDEX IF NOT EXISTS idx_observations_dock_watcher ON observations(watcher_id, image_id) WHERE region_kind = 'dock';
+            CREATE INDEX IF NOT EXISTS idx_observations_image ON observations(image_id, watcher_id);
+            CREATE INDEX IF NOT EXISTS idx_events_image ON events(image_id);
+            CREATE INDEX IF NOT EXISTS idx_events_prev_image ON events(previous_image_id);
+            CREATE INDEX IF NOT EXISTS idx_events_character_type_time ON events(character_name, event_type, event_time DESC, id DESC);
             """);
         EnsureColumns();
     }
@@ -430,9 +434,24 @@ public sealed class CctvStore : IDisposable
                    e.details_json, w.id AS watcher_id, w.label AS watcher_label, i.filename, pi.filename AS previous_filename
             FROM events e LEFT JOIN watchers w ON w.id = e.watcher_id LEFT JOIN images i ON i.id = e.image_id LEFT JOIN images pi ON pi.id = e.previous_image_id
             ORDER BY e.event_time DESC, e.id DESC LIMIT ?
-            """, Math.Clamp(limit, 1, 2000)).Select(r => new EventRow(r.Long("id"), r.Str("event_time")!, r.Str("event_type")!, r.Str("character_name"), r.Str("corporation_ticker"), r.Str("ship_name"),
-                r.Dbl("speed_mps"), r.Dbl("confidence"), r.LongN("image_id"), r.LongN("previous_image_id"), CctvJson.ParseObject(r.Str("details_json")), r.Str("watcher_id"), r.Str("watcher_label"),
-                r.Str("filename"), r.Str("previous_filename")))];
+            """, Math.Clamp(limit, 1, 2000)).Select(ToEventRow)];
+
+    /// <summary>캐릭터마다 상태 이벤트 종류별로 가장 최근 1건 (최근 목록 밖으로 밀려난 도킹 · 이탈도 요약에 남기려는 것). 순서는 정해져 있지 않다.</summary>
+    public List<EventRow> StateEvents() =>
+        [.. Db.Query("""
+            SELECT e.id, e.event_time, e.event_type, e.character_name, e.corporation_ticker, e.ship_name, e.speed_mps, e.confidence, e.image_id, e.previous_image_id,
+                   e.details_json, w.id AS watcher_id, w.label AS watcher_label, i.filename, pi.filename AS previous_filename
+            FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY character_name, event_type ORDER BY event_time DESC, id DESC) AS rn
+                  FROM events
+                  WHERE character_name IS NOT NULL AND character_name <> ''
+                    AND event_type IN ('docked', 'undocked', 'warp_in', 'jump_in', 'appeared', 'covop_in', 'jump_out', 'disappeared', 'covop_out')) t
+            JOIN events e ON e.id = t.id LEFT JOIN watchers w ON w.id = e.watcher_id LEFT JOIN images i ON i.id = e.image_id LEFT JOIN images pi ON pi.id = e.previous_image_id
+            WHERE t.rn = 1
+            """).Select(ToEventRow)];
+
+    private static EventRow ToEventRow(Row r) => new(r.Long("id"), r.Str("event_time")!, r.Str("event_type")!, r.Str("character_name"), r.Str("corporation_ticker"), r.Str("ship_name"),
+        r.Dbl("speed_mps"), r.Dbl("confidence"), r.LongN("image_id"), r.LongN("previous_image_id"), CctvJson.ParseObject(r.Str("details_json")), r.Str("watcher_id"), r.Str("watcher_label"),
+        r.Str("filename"), r.Str("previous_filename"));
 
     public List<CurrentObject> CurrentObjects() =>
         [.. Db.Query("""
@@ -464,10 +483,11 @@ public sealed class CctvStore : IDisposable
     public List<RegionWarning> RegionWarnings()
     {
         var latest = Db.Query("""
-            SELECT o.watcher_id, w.label AS watcher_label, o.region_kind, o.payload_json, i.filename FROM observations o
-            JOIN watchers w ON w.id = o.watcher_id JOIN images i ON i.id = o.image_id
-            WHERE o.id = (SELECT o2.id FROM observations o2 JOIN images i2 ON i2.id = o2.image_id
-                          WHERE o2.watcher_id = o.watcher_id AND o2.region_kind = o.region_kind ORDER BY i2.capture_key DESC, o2.id DESC LIMIT 1)
+            SELECT o.watcher_id, w.label AS watcher_label, o.region_kind, o.payload_json, i.filename
+            FROM (SELECT o1.id AS oid, ROW_NUMBER() OVER (PARTITION BY o1.watcher_id, o1.region_kind ORDER BY i1.capture_key DESC, o1.id DESC) AS rk
+                  FROM observations o1 JOIN images i1 ON i1.id = o1.image_id WHERE o1.watcher_id IS NOT NULL) r
+            JOIN observations o ON o.id = r.oid JOIN watchers w ON w.id = o.watcher_id JOIN images i ON i.id = o.image_id
+            WHERE r.rk = 1 ORDER BY o.id
             """);
         var list = new List<RegionWarning>();
         foreach (var row in latest)

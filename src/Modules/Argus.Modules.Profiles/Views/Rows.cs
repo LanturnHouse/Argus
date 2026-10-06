@@ -14,7 +14,7 @@ public sealed class CharRow
     /// <summary>파일이 유난히 작을 때의 경고.</summary>
     public string Warn { get; init; } = "";
 
-    public static string Format(ProfilesService svc, CharFile f)
+    public static string Format(CharFile f)
     {
         var kb = f.Size / 1024.0;
         return $"ID {f.Id}  ·  {kb:N1} KB  ·  {f.Modified:MM-dd HH:mm}";

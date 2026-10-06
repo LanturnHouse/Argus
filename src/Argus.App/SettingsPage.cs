@@ -12,10 +12,10 @@ public sealed class SettingsPage : UserControl
     /// <summary>한 탭(그룹)에 보이는 것: 모듈 하나의 설정 + 그 모듈 아래 하위 항목으로 지정한 다른 모듈들의 설정.</summary>
     private sealed record Group(Section Main, List<Section> Children);
 
-    public static SettingsPage? Create(IEnumerable<IArgusModule> modules)
+    public static SettingsPage? Create(IEnumerable<IArgusModule> modules, ModuleHost host)
     {
         var sections = modules
-            .Select(m => (Module: m, View: m.CreateSettingsView() as UIElement))
+            .Select(m => (Module: m, View: host.TryCreate(m, x => x.CreateSettingsView()) as UIElement))
             .Where(s => s.View != null)
             .Select(s => new Section(s.Module, s.View!))
             .ToList();
@@ -39,11 +39,8 @@ public sealed class SettingsPage : UserControl
     {
         var stack = new StackPanel { MaxWidth = 860, HorizontalAlignment = HorizontalAlignment.Left };
 
-        var title = new TextBlock { Text = "설정", FontSize = 24, FontWeight = FontWeights.Bold };
-        var sub = new TextBlock { Text = "기능별 설정", Margin = new Thickness(0, 4, 0, 16) };
-        sub.SetResourceReference(FrameworkElement.StyleProperty, "Dim");
+        var title = new TextBlock { Text = "설정", FontSize = 24, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 16) };
         stack.Children.Add(title);
-        stack.Children.Add(sub);
 
         // 기능(모듈)별 그룹 탭
         var tabs = new WrapPanel();

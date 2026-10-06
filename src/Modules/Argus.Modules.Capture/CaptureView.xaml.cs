@@ -167,6 +167,7 @@ public partial class CaptureView : UserControl
     private async void PickRegion_Click(object sender, RoutedEventArgs e)
     {
         if (_cfg == null || _character == null) return;
+        var cfg = _cfg;
         var name = _character;
         PickBtn.IsEnabled = false;
         try
@@ -182,18 +183,21 @@ public partial class CaptureView : UserControl
 
             var shot = BitmapSource.Create(frame.Width, frame.Height, 96, 96, PixelFormats.Bgr32, null, frame.Bgra, frame.Width * 4);
             shot.Freeze();
-            Int32Rect? current = _cfg.HasRoi ? new Int32Rect(_cfg.RoiX, _cfg.RoiY, _cfg.RoiW, _cfg.RoiH) : null;
+            Int32Rect? current = cfg.HasRoi ? new Int32Rect(cfg.RoiX, cfg.RoiY, cfg.RoiW, cfg.RoiH) : null;
 
             var owner = Window.GetWindow(this);
             var picker = new RegionPickerWindow(shot, current) { Owner = owner };
             if (owner != null) { picker.Left = owner.Left; picker.Top = owner.Top; } // 앱이 떠 있는 모니터에서 열기
             if (picker.ShowDialog() != true || picker.Result is not { } r) return;
 
-            _cfg.RoiX = r.X; _cfg.RoiY = r.Y; _cfg.RoiW = r.Width; _cfg.RoiH = r.Height;
+            cfg.RoiX = r.X; cfg.RoiY = r.Y; cfg.RoiW = r.Width; cfg.RoiH = r.Height;
             _service.Save();
-            UpdateRegionCard();
-            UpdateButtons();
-            UpdateStatus();
+            if (_character == name)
+            {
+                UpdateRegionCard();
+                UpdateButtons();
+                UpdateStatus();
+            }
         }
         finally { PickBtn.IsEnabled = true; }
     }
@@ -217,17 +221,14 @@ public partial class CaptureView : UserControl
         {
             RoiLabel.Text = $"{_cfg.RoiW} × {_cfg.RoiH}  @ ({_cfg.RoiX}, {_cfg.RoiY})";
             RoiBadge.Background = (System.Windows.Media.Brush)FindResource("AccentSoft");
-            RoiHint.Text = "이 영역의 변화를 감지합니다. UI 배치를 바꿨다면 다시 지정하세요.";
             PickBtn.Content = "영역 다시 지정";
         }
         else
         {
             RoiLabel.Text = "미지정";
             RoiBadge.Background = (System.Windows.Media.Brush)FindResource("Surface3");
-            RoiHint.Text = "영역을 지정해야 감시를 시작할 수 있습니다.";
             PickBtn.Content = "영역 지정";
         }
-        UpdateHints();
     }
 
     // ---- 설정 ----
@@ -253,18 +254,6 @@ public partial class CaptureView : UserControl
         _cfg.SaveMode = SaveNone.IsChecked == true ? SaveMode.None
                       : SaveFull.IsChecked == true ? SaveMode.FullClient : SaveMode.SelectedArea;
         _service.Save();
-        UpdateHints();
-    }
-
-    private void UpdateHints()
-    {
-        if (_cfg == null) return;
-        SaveHint.Text = _cfg.SaveMode switch
-        {
-            SaveMode.None => "변화를 감지해도 이미지를 저장하지 않고 알림만 보냅니다.",
-            SaveMode.SelectedArea => "변화가 감지되면 감시 영역만 잘라서 저장합니다.",
-            _ => "감시는 지정한 영역에서 하고, 저장은 클라이언트 전체 화면으로 합니다.",
-        };
     }
 
     // ---- 시작/중지 ----
@@ -314,14 +303,11 @@ public partial class CaptureView : UserControl
     {
         if (sender is not Button { Tag: string path } || string.IsNullOrEmpty(path)) return;
         if (!File.Exists(path)) { System.Windows.MessageBox.Show("파일을 찾을 수 없습니다.", "열기"); return; }
-        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+        catch { /* 연결 프로그램 없음 */ }
     }
 
     // ---- 저장 폴더 ----
 
-    private void OpenFolder_Click(object sender, RoutedEventArgs e)
-    {
-        Directory.CreateDirectory(_service.OutputFolder);
-        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{_service.OutputFolder}\"") { UseShellExecute = true });
-    }
+    private void OpenFolder_Click(object sender, RoutedEventArgs e) => _service.OpenOutputFolder();
 }

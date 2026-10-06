@@ -25,6 +25,8 @@ public sealed class HotkeyService : IDisposable
     private readonly DispatcherTimer _captureTimeout = new() { Interval = TimeSpan.FromMilliseconds(CaptureTimeoutMs) };
     private volatile (string Character, long At)[] _surgeOrder = [];   // 레드박싱 전환 대상 (먼저 감지된 순)
     private volatile string[] _cycleOrder = [];   // 훅 스레드에서 읽으므로 UI 스레드가 만든 스냅샷을 쓴다
+    private nint _scopeFg;   // 훅 스레드 전용: 마지막으로 EVE 창인지 조회한 앞 창과 그 결과
+    private bool _scopeFgIsEve;
     private Action? _captureDone;
 
     public bool HooksInstalled => _hooks.Installed;
@@ -35,6 +37,7 @@ public sealed class HotkeyService : IDisposable
         _preview = preview;
         _ui = Application.Current.Dispatcher;
         _matcher.InScope = InScope;
+        _matcher.CaptureScope = ForegroundIsArgus;
         _matcher.Triggered = action => _ = Task.Run(() => Perform(action));   // 훅 스레드는 바로 돌려보낸다
         _hooks = new InputHooks(_matcher);
         _captureTimeout.Tick += (_, _) => CancelCapture();
@@ -56,7 +59,18 @@ public sealed class HotkeyService : IDisposable
         if (fg == 0) return false;
         GetWindowThreadProcessId(fg, out var pid);
         if (pid == Environment.ProcessId) return true;
-        return _ctx.Clients.Current.Any(c => c.Hwnd == fg);
+        if (_ctx.Clients.Current.Any(c => c.Hwnd == fg)) return true;
+        // 로그인·캐릭터 선택 창처럼 클라이언트 목록에 없는 EVE 창도 범위 안이다. 앞 창이 바뀔 때만 프로세스를 조회한다.
+        if (fg != _scopeFg) { _scopeFg = fg; _scopeFgIsEve = WindowFocus.IsEveWindow(fg); }
+        return _scopeFgIsEve;
+    }
+
+    private static bool ForegroundIsArgus()
+    {
+        var fg = WindowFocus.Foreground;
+        if (fg == 0) return false;
+        GetWindowThreadProcessId(fg, out var pid);
+        return pid == Environment.ProcessId;
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -161,7 +175,7 @@ public sealed class HotkeyService : IDisposable
             {
                 HotkeyBinding a = bs[i], b = bs[j];
                 if (a.Trigger.Same(b.Trigger))
-                    result.Add(new($"같은 단축키 [{a.Trigger}] 를 두 동작이 함께 쓰고 있습니다: '{ActionLabel(a.Action)}', '{ActionLabel(b.Action)}'. 먼저 지정한 쪽만 동작합니다.", [a.Action, b.Action]));
+                    result.Add(new($"같은 단축키 [{a.Trigger}] 를 두 동작이 함께 쓰고 있습니다: '{ActionLabel(a.Action)}', '{ActionLabel(b.Action)}'. '{ActionLabel(a.Action)}' 쪽이 우선합니다.", [a.Action, b.Action]));
                 else if (allowExtra && a.Trigger.SameBase(b.Trigger))
                 {
                     HotkeyBinding? lo = (a.Trigger.Mods & b.Trigger.Mods) == a.Trigger.Mods ? a : (b.Trigger.Mods & a.Trigger.Mods) == b.Trigger.Mods ? b : null;

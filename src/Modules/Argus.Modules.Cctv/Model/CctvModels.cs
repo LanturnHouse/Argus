@@ -62,6 +62,7 @@ public sealed class RegionFields
     public List<string> Lines { get; set; } = [];
     public List<OverviewRow>? OverviewRows { get; set; }
     public bool? OverviewDetected { get; set; }
+    public bool? OverviewTruncated { get; set; }
     public List<SignatureRow>? Signatures { get; set; }
     public bool? ProbeDetected { get; set; }
     public int? DockCount { get; set; }

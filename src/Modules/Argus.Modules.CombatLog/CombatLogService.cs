@@ -3,7 +3,6 @@ using System.Text.RegularExpressions;
 using Argus.Core.Clients;
 using Argus.Core.Events;
 using Argus.Core.Modules;
-using Argus.Core.Settings;
 
 namespace Argus.Modules.CombatLog;
 
@@ -145,12 +144,24 @@ public sealed class CombatLogService : IDisposable
             if (!_combatMode) return;
             if (_rescanNow || now - _lastRescan >= RescanMs) { _rescanNow = false; _lastRescan = now; Retarget(now); }
 
-            foreach (var t in _tracked.Values)
-                foreach (var line in t.Tailer.ReadNewLines())
+            List<string>? failed = null;
+            foreach (var (name, t) in _tracked)
+            {
+                try
                 {
-                    t.Lines++;
-                    if (CombatLogParser.Parse(line, t.Tailer.Language) is { } e) { t.Stats.Add(e, now); t.Events++; t.LastEventAt = now; }
+                    foreach (var line in t.Tailer.ReadNewLines())
+                    {
+                        t.Lines++;
+                        if (CombatLogParser.Parse(line, t.Tailer.Language) is { } e) { t.Stats.Add(e, now); t.Events++; t.LastEventAt = now; }
+                    }
                 }
+                catch (Exception ex)
+                {
+                    (failed ??= []).Add(name);
+                    System.Diagnostics.Trace.WriteLine($"[CombatLog] {name}: {ex.Message}");
+                }
+            }
+            if (failed != null) foreach (var n in failed) { _tracked[n].Tailer.Dispose(); _tracked.Remove(n); _latest.Remove(n); }
 
             if (now - _lastPublish >= PublishMs && _tracked.Count > 0)
             {
@@ -173,8 +184,10 @@ public sealed class CombatLogService : IDisposable
         {
             _tracked[name].Tailer.Dispose();
             _tracked.Remove(name);
+            _latest.Remove(name);
         }
 
+        if (running.Count == 0) return;
         var folder = FolderPath;
         if (!Directory.Exists(folder)) return;
         IndexFolder(folder);
@@ -190,7 +203,7 @@ public sealed class CombatLogService : IDisposable
                 if (string.Equals(cur.Tailer.Path, path, StringComparison.OrdinalIgnoreCase)) continue;
                 cur.Tailer.Dispose();   // 새 세션 파일로 넘어감: 처음부터 읽는다 (수치는 이어서 유지)
                 if (TryOpen(path, character, fromEnd: false, out var lang, out var tailer)) { cur.Tailer = tailer!; cur.CharId = charId; }
-                else _tracked.Remove(character);
+                else { _tracked.Remove(character); _latest.Remove(character); }
             }
             else if (TryOpen(path, character, fromEnd: true, out var language, out var t))   // 처음 붙을 때는 이미 지나간 전투는 건너뛴다
                 _tracked[character] = new Tracked(charId, t!, new CharacterStats(character));
@@ -257,7 +270,7 @@ public sealed class CombatLogService : IDisposable
     private void DropAll()
     {
         foreach (var t in _tracked.Values) t.Tailer.Dispose();
-        _tracked.Clear(); _names.Clear(); _newestByChar.Clear(); _unknownRetryAt.Clear();
+        _tracked.Clear(); _latest.Clear(); _names.Clear(); _newestByChar.Clear(); _unknownRetryAt.Clear();
     }
 
     public void Dispose()

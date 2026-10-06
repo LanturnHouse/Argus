@@ -43,7 +43,7 @@ internal sealed class ClientMonitor(
     private async Task LoopAsync(CancellationToken ct)
     {
         var lastAlert = DateTime.MinValue;
-        var pending = false; // 쿨다운 때문에 저장하지 못한 변화가 있는가
+        var pendingPixels = 0; // 쿨다운 때문에 알리지 못한 변화 중 가장 많이 변한 픽셀 수 (0 이면 없음)
         var startShot = false; // 감시를 시작하고 처음 읽은 화면을 한 장 저장했는가
 
         while (!ct.IsCancellationRequested)
@@ -55,8 +55,12 @@ internal sealed class ClientMonitor(
                 else if (session.IsMinimized) Status = "창이 최소화됨 (캡처 불가)";
                 else if (session.Grab() is { } frame)
                 {
-                    if (!startShot) { startShot = true; SaveStartShot(frame); }
-                    Tick(frame, ref lastAlert, ref pending);
+                    if (session.Faulted) Status = "프레임 읽기 실패 (세션 재생성 중)";
+                    else
+                    {
+                        if (!startShot) { startShot = true; SaveStartShot(frame); }
+                        Tick(frame, ref lastAlert, ref pendingPixels);
+                    }
                 }
                 else Status = "프레임 대기 중";
             }
@@ -67,9 +71,9 @@ internal sealed class ClientMonitor(
         }
     }
 
-    private void Tick(Frame frame, ref DateTime lastAlert, ref bool pending)
+    private void Tick(Frame frame, ref DateTime lastAlert, ref int pendingPixels)
     {
-        var (rx, ry, rw, rh) = ResolveRoi(frame);
+        var (rx, ry, rw, rh) = config.ResolveRoi(frame.Width, frame.Height);
         if (_lastRoi != (rx, ry, rw, rh)) { _detector.Reset(); _lastRoi = (rx, ry, rw, rh); } // 영역이 바뀌면 기준 프레임 재설정
         var region = _detector.Compare(frame, rx, ry, rw, rh, config.PixelThreshold, out var changed);
 
@@ -77,21 +81,32 @@ internal sealed class ClientMonitor(
         var now = DateTime.Now;
         var cooled = (now - lastAlert).TotalSeconds >= config.AlertIntervalSec;
 
-        if (isChange) pending = true;
-        if (!pending) { Status = "감시 중"; return; }
+        if (isChange) pendingPixels = Math.Max(pendingPixels, changed);
+        if (pendingPixels == 0) { Status = "감시 중"; return; }
         if (!cooled) { Status = "변화 감지 (쿨다운 대기)"; return; }
 
-        pending = false;
+        var reported = pendingPixels;
+        pendingPixels = 0;
         lastAlert = now;
-        string? path = null;
+        string? path = null, saveError = null;
         if (config.SaveMode != SaveMode.None)
         {
-            path = config.SaveMode == SaveMode.FullClient
-                ? SavePng(frame.Bgra, frame.Width, frame.Height, now)
-                : SavePng(region, rw, rh, now);
+            try
+            {
+                path = config.SaveMode == SaveMode.FullClient
+                    ? SavePng(frame.Bgra, frame.Width, frame.Height, now)
+                    : SavePng(region, rw, rh, now);
+            }
+            catch (Exception ex)
+            {
+                saveError = ex.Message;
+                System.Diagnostics.Trace.WriteLine($"[CCTV] 변화 스크린샷 저장 실패: {ex.Message}");
+            }
         }
-        Status = $"변화 감지: {now:HH:mm:ss} ({changed}px)";
-        bus.Publish(new RegionChanged(character, now, changed, path, config.Beep));
+        Status = saveError is null
+            ? $"변화 감지: {now:HH:mm:ss} ({reported}px)"
+            : $"변화 감지: {now:HH:mm:ss} ({reported}px) · 저장 실패: {saveError}";
+        bus.Publish(new RegionChanged(character, now, reported, path, config.Beep));
     }
 
     /// <summary>
@@ -105,7 +120,7 @@ internal sealed class ClientMonitor(
             var now = DateTime.Now;
             if (config.SaveMode == SaveMode.SelectedArea)
             {
-                var (rx, ry, rw, rh) = ResolveRoi(frame);
+                var (rx, ry, rw, rh) = config.ResolveRoi(frame.Width, frame.Height);
                 SavePng(ChangeDetector.Crop(frame, rx, ry, rw, rh), rw, rh, now);
             }
             else SavePng(frame.Bgra, frame.Width, frame.Height, now);
@@ -113,17 +128,7 @@ internal sealed class ClientMonitor(
         catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[CCTV] 시작 스크린샷 저장 실패: {ex.Message}"); }
     }
 
-    private (int X, int Y, int W, int H) ResolveRoi(Frame f)
-    {
-        // 창 크기가 바뀌어 영역이 프레임 밖으로 나가면 잘라 맞춘다.
-        var x = Math.Clamp(config.RoiX, 0, f.Width - 1);
-        var y = Math.Clamp(config.RoiY, 0, f.Height - 1);
-        var w = Math.Clamp(config.RoiW, 1, f.Width - x);
-        var h = Math.Clamp(config.RoiH, 1, f.Height - y);
-        return (x, y, w, h);
-    }
-
-    /// <summary>CCTV 웹앱이 읽는 파일명 규칙: CCTV{yyyyMMddHHmmss}{fff}_{캐릭터}.png</summary>
+    /// <summary>분석(Cctv 모듈)이 읽는 파일명 규칙: CCTV{yyyyMMddHHmmss}{fff}_{캐릭터}.png</summary>
     private string SavePng(byte[] bgra, int w, int h, DateTime at)
     {
         var folder = getOutputFolder();
@@ -134,7 +139,7 @@ internal sealed class ClientMonitor(
         var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgr32, null, bgra, w * 4);
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(bmp));
-        var tmp = path + ".tmp"; // 웹앱이 쓰다 만 파일을 읽지 않도록 완성 후 이름 변경
+        var tmp = path + ".tmp"; // 분석이 덜 써진 파일을 읽지 않도록 완성 후 이름 변경
         using (var fs = File.Create(tmp)) encoder.Save(fs);
         File.Move(tmp, path, overwrite: true);
         return path;

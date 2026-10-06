@@ -18,7 +18,8 @@ public static class CombatMode
     /// <summary>모드를 저장하고 모두에게 알린다.</summary>
     public static void Set(ISettingsStore settings, IEventBus bus, bool active)
     {
-        settings.Save(Key, new State { Active = active });
+        try { settings.Save(Key, new State { Active = active }); }
+        catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"[CombatMode] 저장 실패: {ex.Message}"); }   // 저장 실패가 모드 전환을 막지 않게
         bus.Publish(new CombatModeChanged(active));
     }
 }

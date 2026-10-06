@@ -23,11 +23,12 @@ public sealed class ClientLayout
     /// <summary>레드박싱 경고(붉은 깜빡임, 전환 단축키 안내, 레드박싱 전환 대상 포함).</summary>
     public bool HudSurge { get; set; } = true;
 
-    public HudFlags Hud => new(HudDpsIn, HudLogi, HudNeut, HudSurge);
+    [System.Text.Json.Serialization.JsonIgnore]
+    public HudFlags Hud => new(HudDpsIn, HudLogi, HudNeut);
 }
 
 /// <summary>클라이언트 하나에서 켜져 있는 HUD 요소들.</summary>
-public readonly record struct HudFlags(bool DpsIn, bool Logi, bool Neut, bool Surge = true);
+public readonly record struct HudFlags(bool DpsIn, bool Logi, bool Neut);
 
 public enum HudElement { DpsIn, Logi, Neut, Surge }
 

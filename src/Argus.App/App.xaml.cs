@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using Argus.Core.Clients;
@@ -13,6 +14,27 @@ public partial class App : Application
     public ClientRegistry Registry { get; private set; } = null!;
     public IEventBus Bus { get; private set; } = null!;
     public ISettingsStore Settings { get; private set; } = null!;
+
+    public App()
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Argus");
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "argus.log");
+            // 한 세대만 보관: 1MB 를 넘으면 직전 로그로 밀어낸다.
+            if (File.Exists(path) && new FileInfo(path).Length > 1024 * 1024) File.Move(path, path + ".old", overwrite: true);
+            Trace.Listeners.Add(new TextWriterTraceListener(path));
+            Trace.AutoFlush = true;
+
+            DispatcherUnhandledException += (_, e) => Log("UI", e.Exception);
+            AppDomain.CurrentDomain.UnhandledException += (_, e) => Log("Domain", e.ExceptionObject as Exception ?? new Exception(e.ExceptionObject?.ToString()));
+            TaskScheduler.UnobservedTaskException += (_, e) => Log("Task", e.Exception);
+        }
+        catch { /* 로그 실패가 앱 시작을 막지 않게 */ }
+    }
+
+    private static void Log(string kind, Exception ex) => Trace.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{kind}] {ex}");
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -30,7 +52,7 @@ public partial class App : Application
         Host.Register(new Modules.Profiles.ProfilesModule());
         Host.Register(new Modules.Preview.PreviewModule());
         Host.Register(new Modules.CombatLog.CombatLogModule());
-        Host.Register(new Modules.Cctv.CctvModule());   // EVE CCTV 웹앱(Node 서비스 + 웹 화면)을 Argus 안에서 실행하고 탭으로 보여준다
+        Host.Register(new Modules.Cctv.CctvModule());   // 스크린샷을 로컬 Ollama 비전 모델로 판독하는 분석 모듈 (사이드바 'CCTV' 아래 '분석')
         Host.Register(new Modules.Preview.PreviewFeatureTestModule());   // 설정 > 프리뷰 맨 아래 '기능 테스트'
 
         Registry.Start();

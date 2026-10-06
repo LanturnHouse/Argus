@@ -76,7 +76,7 @@ internal sealed class RegionPickerWindow : Window
     {
         var t = new TextBlock
         {
-            Text = "감시할 영역을 드래그해서 선택하세요  ·  Enter 확인  ·  Esc 취소",
+            Text = "드래그로 영역 선택",
             Foreground = Brushes.White,
             FontSize = 15,
         };

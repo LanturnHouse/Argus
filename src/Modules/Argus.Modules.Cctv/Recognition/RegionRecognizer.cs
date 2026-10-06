@@ -13,7 +13,7 @@ public sealed class RecognitionFailedException(string message) : Exception(messa
 /// </summary>
 public sealed class RegionRecognizer(VisionClient vision, Func<VisionSettings> settings, string cropRoot)
 {
-    private readonly Dictionary<string, (ulong Hash, Observation Observation)> _last = [];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (ulong Hash, Observation Observation)> _last = new();
 
     /// <summary>영역 설정이 바뀌었거나 분석을 껐다 켰을 때 직전 결과 재사용을 비운다.</summary>
     public void ResetReuse() => _last.Clear();

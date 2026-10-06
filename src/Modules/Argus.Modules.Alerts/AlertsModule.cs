@@ -60,6 +60,6 @@ public sealed class AlertsModule : IArgusModule
             }
             else SystemSounds.Exclamation.Play();
         }
-        catch { /* 알림음 실패가 감시를 멈추면 안 된다 */ }
+        catch { try { SystemSounds.Exclamation.Play(); } catch { } }   // 재생 못 하는 wav(비 PCM/손상)면 소리 없이 사라지지 않게 시스템음으로 대체; 폴백 실패도 삼킴
     }
 }

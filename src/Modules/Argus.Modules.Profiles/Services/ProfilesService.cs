@@ -101,9 +101,7 @@ public sealed class ProfilesService
         var existing = FindTemplateByName(name);
         var info = existing ?? new TemplateInfo { Name = name };
         var dest = TemplatePath(info.Id);
-        var tmp = dest + ".tmp";
-        File.Copy(source.Path, tmp, overwrite: true);
-        File.Move(tmp, dest, overwrite: true);
+        WriteAtomic(source.Path, dest);
 
         info.Name = name;
         info.SourceCharId = source.Id;
@@ -204,7 +202,7 @@ public sealed class ProfilesService
         if (manifest.Items.Count > 0)
         {
             Directory.CreateDirectory(backupDir);
-            File.WriteAllText(Path.Combine(backupDir, "manifest.json"), JsonSerializer.Serialize(manifest, Json));
+            WriteManifest(backupDir, manifest);
             PruneBackups();
         }
         return results;
@@ -226,28 +224,40 @@ public sealed class ProfilesService
         }
     }
 
-    // ---------- 되돌리기 ----------
-
-    private string? LatestBackupDir() =>
-        Directory.Exists(BackupsDir)
-            ? Directory.GetDirectories(BackupsDir).Where(d => File.Exists(Path.Combine(d, "manifest.json"))).OrderDescending().FirstOrDefault()
-            : null;
-
-    public BackupManifest? LastBackup()
+    private static void WriteManifest(string dir, BackupManifest m)
     {
-        var dir = LatestBackupDir();
-        return dir == null ? null : JsonSerializer.Deserialize<BackupManifest>(File.ReadAllText(Path.Combine(dir, "manifest.json")));
+        var path = Path.Combine(dir, "manifest.json");
+        var tmp = path + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(m, Json));
+        File.Move(tmp, path, overwrite: true);
     }
 
-    public bool CanUndo => LatestBackupDir() != null;
+    private static BackupManifest? ReadManifest(string dir)
+    {
+        try { return JsonSerializer.Deserialize<BackupManifest>(File.ReadAllText(Path.Combine(dir, "manifest.json"))); }
+        catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    // ---------- 되돌리기 ----------
+
+    private (string Dir, BackupManifest Manifest)? LatestBackup()
+    {
+        if (!Directory.Exists(BackupsDir)) return null;
+        foreach (var d in Directory.GetDirectories(BackupsDir).OrderDescending())
+            if (ReadManifest(d) is { } m) return (d, m);
+        return null;
+    }
+
+    public BackupManifest? LastBackup() => LatestBackup()?.Manifest;
+
+    public bool CanUndo => LatestBackup() != null;
 
     /// <summary>직전 적용을 되돌린다. 실행 중인 캐릭터는 건너뛰고 남겨 두어 나중에 다시 시도할 수 있다.</summary>
     public List<ApplyResult> UndoLast()
     {
         var results = new List<ApplyResult>();
-        var dir = LatestBackupDir();
-        if (dir == null) return results;
-        var manifest = JsonSerializer.Deserialize<BackupManifest>(File.ReadAllText(Path.Combine(dir, "manifest.json")))!;
+        if (LatestBackup() is not { } latest) return results;
+        var (dir, manifest) = latest;
 
         var remaining = new List<BackupItem>();
         foreach (var item in manifest.Items)
@@ -277,7 +287,7 @@ public sealed class ProfilesService
         else
         {
             manifest.Items = remaining; // 실패/보류 항목만 남긴다
-            File.WriteAllText(Path.Combine(dir, "manifest.json"), JsonSerializer.Serialize(manifest, Json));
+            WriteManifest(dir, manifest);
         }
         return results;
     }

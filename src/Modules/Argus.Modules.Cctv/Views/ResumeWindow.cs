@@ -53,9 +53,9 @@ internal static class ResumeWindow
             nowBox.Clicked += () => Choose(null);
 
             int index = 0;
-            foreach (var b in before) Add(ImageRow(svc, b.Image, b.Status), index++);
+            foreach (var b in before) Add(ImageRow(b.Image, b.Status), index++);
             var separator = Add(UiKit.Text($"━━  여기까지 분석함 (마지막으로 인식한 이미지 {(dividerAt.Length >= 19 ? dividerAt.Substring(11, 8) : dividerAt)})  ·  실제 일시중지 {(pausedAt.Length >= 19 ? pausedAt.Substring(11, 8) : pausedAt)}  ━━", 12, FontWeights.SemiBold, UiKit.Warn, new Thickness(0, 6, 0, 6)), null);
-            foreach (var a in after) Add(ImageRow(svc, a.Image, a.Status), index++);
+            foreach (var a in after) Add(ImageRow(a.Image, a.Status), index++);
             list.Loaded += (_, _) => list.ScrollIntoView(separator);
 
             var cancel = UiKit.Button("취소", () => window.Close(), "GhostButton");
@@ -65,7 +65,7 @@ internal static class ResumeWindow
             var root = new DockPanel { Margin = new Thickness(22, 18, 22, 18) };
             var head = new StackPanel();
             head.Children.Add(UiKit.Text($"감시 재시작 — {watcher.Label}", 18, FontWeights.Bold));
-            head.Children.Add(UiKit.Dim("자리를 잡은 뒤 처음 보이는 스크린샷을 찾으세요. 목록에서 스크린샷을 누르면 크게 보면서 이전/다음으로 넘겨 볼 수 있고, 가운데 '확인'으로 그 스크린샷을 재시작 지점으로 고릅니다. 목록의 위쪽은 이미 분석한 구간, 구분선 아래쪽은 아직 분석하지 못한 구간(분석이 뒤처진 채 일시중지했거나 일시중지 중에 쌓인 것)입니다.", 12, new Thickness(0, 2, 0, 12)));
+            head.Children.Add(UiKit.Dim("자리를 잡은 뒤 처음 보이는 스크린샷을 눌러 '확인'으로 재시작 지점을 고르세요.", 12, new Thickness(0, 2, 0, 12)));
             head.Children.Add(nowBox);
             DockPanel.SetDock(head, Dock.Top);
             DockPanel.SetDock(footer, Dock.Bottom);
@@ -128,7 +128,6 @@ internal static class ResumeWindow
         {
             var sp = new StackPanel { Margin = new Thickness(2, 4, 2, 4) };
             sp.Children.Add(UiKit.Text("지금 이후에 촬영되는 스크린샷부터", 13.5, FontWeights.SemiBold, UiKit.AccentText));
-            sp.Children.Add(UiKit.Dim("가장 흔한 선택입니다. 쌓여 있는 이전 스크린샷은 건너뛰고, 지금부터 새로 찍히는 것부터 분석합니다. 누르면 바로 다음 단계(이름 · 타입 · 인식 영역 확인)로 넘어갑니다.", 12, new Thickness(0, 2, 0, 0)));
             return sp;
         }
 
@@ -138,7 +137,7 @@ internal static class ResumeWindow
         return result;
     }
 
-    private static UIElement ImageRow(CctvService svc, ImageRow image, string status)
+    private static UIElement ImageRow(ImageRow image, string status)
     {
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });

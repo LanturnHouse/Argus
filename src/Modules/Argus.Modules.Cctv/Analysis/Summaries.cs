@@ -104,9 +104,11 @@ public static class Summaries
     {
         var active = new Dictionary<string, (string Character, string Ship, string Corporation, LiveStatus Status, string Time, string Source)>();
         foreach (var o in objects) active[o.Character] = (o.Character, o.Ship ?? "미확인 함선", o.Corporation ?? "미확인", LiveStatus.Observed, o.LastSeenAt, o.WatcherLabel);
+        var decided = new HashSet<string>();
         foreach (var e in events)
         {
-            if (string.IsNullOrEmpty(e.Character) || active.ContainsKey(e.Character!)) continue;
+            if (string.IsNullOrEmpty(e.Character) || e.Type.StartsWith("signature_") || active.ContainsKey(e.Character!)) continue;
+            if (!decided.Add(e.Character!)) continue;
             if (e.Type == "docked") active[e.Character!] = (e.Character!, e.Ship ?? "미확인 함선", e.Corporation ?? "미확인", LiveStatus.Docked, e.Time, e.WatcherLabel ?? "미지정 눈깔");
         }
 

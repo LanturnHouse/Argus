@@ -20,6 +20,7 @@ public sealed class CctvModule : IArgusModule, IDashboardContributor
 
     public Task StartAsync(IModuleContext context, CancellationToken ct)
     {
+        _watchers = null;
         _service = new CctvService(context);
         _service.Start();   // 폴더 감시만 시작한다. 비전 모델은 사용자가 분석을 켜고 읽을 이미지가 생길 때까지 올리지 않는다.
         return Task.CompletedTask;
@@ -29,6 +30,7 @@ public sealed class CctvModule : IArgusModule, IDashboardContributor
     {
         _service?.Dispose();   // 분석 중이면 멈추고 모델을 내린다
         _service = null;
+        _watchers = null;
         return Task.CompletedTask;
     }
 
@@ -49,7 +51,7 @@ public sealed class CctvModule : IArgusModule, IDashboardContributor
             {
                 AnalysisState.Working => new("분석 중", ChipTone.Accent, "비전 모델이 스크린샷을 읽고 있습니다"),
                 AnalysisState.Loading => new("모델 올리는 중", ChipTone.Warn, st.Message),
-                AnalysisState.Idle => new("분석 켜짐", ChipTone.Good, "읽을 이미지가 생기면 모델을 올립니다"),
+                AnalysisState.Idle => st.IsError ? new("분석 오류", ChipTone.Bad, st.Message) : new("분석 켜짐", ChipTone.Good, "읽을 이미지가 생기면 모델을 올립니다"),
                 _ => st.IsError ? new("분석 오류", ChipTone.Bad, st.Message) : new("분석 꺼짐", ChipTone.Neutral, "분석 탭에서 켤 수 있습니다"),
             },
         };
@@ -60,7 +62,19 @@ public sealed class CctvModule : IArgusModule, IDashboardContributor
     public IReadOnlyList<DashboardChip> ClientChips(string character)
     {
         if (_service is not { } s) return [];
-        var watcher = s.Store.ListWatchers().FirstOrDefault(w => string.Equals(w.Character, character, StringComparison.OrdinalIgnoreCase));
+        var watcher = Watchers(s).FirstOrDefault(w => string.Equals(w.Character, character, StringComparison.OrdinalIgnoreCase));
         return watcher == null ? [] : [new($"분석 · {watcher.Label}", ChipTone.Accent, $"{watcher.WatchType.Label()} 감시 눈깔 (영역 {watcher.Regions.Count}개)", Column: DashboardColumns.Watch)];
+    }
+
+    // 클라이언트마다 DB 를 읽지 않도록 쓰기 횟수가 같으면 지난 목록을 쓴다. 돌려준 목록은 읽기 전용으로만 쓴다.
+    private (long Writes, List<Watcher> Items)? _watchers;
+
+    private List<Watcher> Watchers(CctvService s)
+    {
+        var w = s.Store.Db.WriteCount;   // 쿼리보다 먼저 읽는다
+        if (_watchers is { } c && c.Writes == w) return c.Items;
+        var list = s.Store.ListWatchers();
+        _watchers = (w, list);
+        return list;
     }
 }

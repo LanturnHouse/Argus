@@ -34,6 +34,7 @@ internal sealed class Db : IDisposable
         _conn = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Cache = SqliteCacheMode.Private }.ToString());
         _conn.Open();
         Exec("PRAGMA journal_mode = WAL");
+        Exec("PRAGMA synchronous = NORMAL");   // WAL 에서는 NORMAL 이어도 DB 가 깨지지 않는다. 커밋마다 디스크 동기화를 하지 않게 한다.
         Exec("PRAGMA foreign_keys = ON");
         Exec("PRAGMA busy_timeout = 5000");
     }

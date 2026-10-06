@@ -24,6 +24,8 @@ internal sealed class HudView : Grid
     // 받는 뉴트는 부호로 색을 나눈다: 캡이 빠지면(-) 빨강, 내가 빤 양이 더 많아 늘어나면(+) 파랑, 0 이면 기본색
     private static readonly Brush ColorNeutDrain = Frozen(0xFF, 0x5C, 0x5C), ColorNeutGain = Frozen(0x5C, 0xB8, 0xFF);
     private static Brush Frozen(byte r, byte g, byte b) { var br = new SolidColorBrush(Color.FromRgb(r, g, b)); br.Freeze(); return br; }
+    private static readonly Brush CellDivider = FrozenArgb(0x14, 255, 255, 255);
+    private static Brush FrozenArgb(byte a, byte r, byte g, byte b) { var br = new SolidColorBrush(Color.FromArgb(a, r, g, b)); br.Freeze(); return br; }
 
     private readonly Grid _canvas = new() { Width = DesignWidth, Height = 118, ClipToBounds = true };
     private readonly Border _bar = new()
@@ -46,6 +48,7 @@ internal sealed class HudView : Grid
         HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed,
     };
     private int _flashMs;
+    private string _barKey = "";   // 수치 바에 지금 그려진 글자 (같으면 다시 그리지 않는다)
     private readonly TextBlock _name = new() { FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = Orange };
     private readonly Border _activeWhite = new() { Margin = new Thickness(1), BorderThickness = new Thickness(2), BorderBrush = Brushes.White, Visibility = Visibility.Collapsed };
     private readonly Border _activeInner = new() { Margin = new Thickness(3), BorderThickness = new Thickness(1), BorderBrush = Brushes.Black, Visibility = Visibility.Collapsed };
@@ -123,6 +126,11 @@ internal sealed class HudView : Grid
     /// <summary>전투 수치를 갱신한다. snapshot 이 null 이면(전투 로그를 못 읽는 중) 그리지 않는다.</summary>
     public void SetCombat(CombatSnapshot? s, HudFlags flags)
     {
+        // 표시할 글자가 지난번과 같으면 수치 바를 다시 만들지 않는다
+        var key = s == null ? "" : (flags.DpsIn ? "D" + Format(s.DpsIn) + "|" : "") + (flags.Logi ? "L" + Format(s.LogiIn) + "|" : "") + (flags.Neut ? "N" + FormatNeut(s.NeutIn) + "|" : "");
+        if (key == _barKey) return;
+        _barKey = key;
+
         // 하단 수치 바: 켜 둔 항목만 같은 폭으로 나눠 그린다
         var cells = new List<UIElement>();
         if (s != null)
@@ -149,7 +157,7 @@ internal sealed class HudView : Grid
         sp.Children.Add(new TextBlock { Text = icon, FontSize = 9, Foreground = color, Opacity = 0.85, Margin = new Thickness(0, 0, 3, 0), VerticalAlignment = VerticalAlignment.Center });
         sp.Children.Add(new TextBlock { Text = neut ? FormatNeut(value) : Format(value), FontSize = 12, FontWeight = FontWeights.Bold, Foreground = color, VerticalAlignment = VerticalAlignment.Center });
         // 값이 0 이면 흐리게 (수치가 없다는 것이 한눈에 보이게)
-        var border = new Border { Child = sp, Opacity = Math.Abs(Math.Round(value)) <= 0 ? 0.35 : 1, BorderBrush = new SolidColorBrush(Color.FromArgb(0x14, 255, 255, 255)), BorderThickness = new Thickness(1, 0, 0, 0) };
+        var border = new Border { Child = sp, Opacity = Math.Abs(Math.Round(value)) <= 0 ? 0.35 : 1, BorderBrush = CellDivider, BorderThickness = new Thickness(1, 0, 0, 0) };
         return border;
     }
 
