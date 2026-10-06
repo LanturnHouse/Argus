@@ -57,7 +57,13 @@ public partial class App : Application
 
         Registry.Start();
         await Host.StartAllAsync();
-        new MainWindow().Show();
+
+        // 메인 창을 닫으면 프리뷰 창이 남아 있어도 앱을 끝낸다. 모듈이 먼저 만든 창(프리뷰 호스트)이 자동으로 MainWindow 가 되지 않게
+        // 메인 창을 직접 지정한 뒤에 종료 방식을 바꾼다.
+        var main = new MainWindow();
+        MainWindow = main;
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
+        main.Show();
     }
 
     protected override async void OnExit(ExitEventArgs e)
