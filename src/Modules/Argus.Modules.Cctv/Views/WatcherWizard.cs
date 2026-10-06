@@ -111,6 +111,10 @@ internal sealed class WatcherWizard
     private WatchType _type = WatchType.Structure;
     private bool _filling;
 
+    private const double RegionRowHeight = 24, FooterMinHeight = 52;
+    private const double RegionListHeight = RegionRowHeight * 3 + 6;   // 오버뷰 · 프로빙 창 · 도킹 숫자 한 개씩이 한눈에 보이는 높이 (글꼴 · 배율에 따라 줄 높이가 조금 달라도 3줄에는 스크롤이 생기지 않게 여유를 둔다)
+    private ScrollViewer? _regionScroll;
+
     private readonly bool _resume;              // 감시 재시작 모드: 캐릭터는 바꿀 수 없고, 저장 대신 그 지점부터 감시를 다시 시작한다
     private readonly ImageRow? _startImage;     // 재시작 지점의 스크린샷 (null: 지금 이후 → 가장 최근 스크린샷 위에 그린다)
     private readonly TextBlock _regionStatus = new() { FontSize = 12.5, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
@@ -169,8 +173,8 @@ internal sealed class WatcherWizard
 
         var save = UiKit.Button(resume ? "감시 시작" : "설정 저장", () => { if (_resume) _ = ResumeAsync(); else OnSave(); }, "PrimaryButton"); save.Margin = new Thickness(0);
         _saveButton = save;
-        var footer = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        var footer = new DockPanel { Margin = new Thickness(0, 12, 0, 0), MinHeight = resume ? FooterMinHeight : 0 };   // 재시작 창은 상태 줄 + 오류 문구(두 줄)가 겹쳐 쌓이므로 그 높이를 미리 잡아, 오류가 떠도 스크린샷 영역이 밀리지 않게 한다
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };   // 푸터 최소 높이를 잡아도 버튼이 같이 늘어나지 않게
         if (resume)
         {
             _backButton = UiKit.Button("←  이전", () => { _outcome = ResumeOutcome.Back; Window.GetWindow(_backButton)?.Close(); }, "GhostButton");
@@ -181,6 +185,8 @@ internal sealed class WatcherWizard
         DockPanel.SetDock(buttons, Dock.Right);
         var messages = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         if (resume) messages.Children.Add(_regionStatus);
+        _error.MaxHeight = 34; _error.TextTrimming = TextTrimming.CharacterEllipsis;   // 아주 긴 오류 문구가 푸터를 키워 스크린샷 영역을 줄이지 않게 두 줄까지만 (전체 문구는 마우스를 올리면 툴팁으로)
+        _error.SetBinding(FrameworkElement.ToolTipProperty, new System.Windows.Data.Binding(nameof(TextBlock.Text)) { Source = _error });
         messages.Children.Add(_error);
         footer.Children.Add(buttons); footer.Children.Add(messages);
 
@@ -192,13 +198,21 @@ internal sealed class WatcherWizard
         head.Children.Add(regionHead);
         DockPanel.SetDock(head, Dock.Top);
         DockPanel.SetDock(footer, Dock.Bottom);
-        DockPanel.SetDock(_regionList, Dock.Bottom);
+        // 지정한 영역 목록은 줄 수가 늘어도 높이가 변하지 않는 고정 칸에 둔다 (넘치면 이 칸 안에서 스크롤).
+        // 높이가 변하면 위의 스크린샷 편집기가 그만큼 줄어, 영역을 그릴 때마다 이미지가 작아진다.
+        var regionScroll = UiKit.InnerScroll(_regionList, RegionListHeight);
+        regionScroll.Height = RegionListHeight; regionScroll.Margin = new Thickness(0, 8, 0, 0); regionScroll.Focusable = false;
+        _regionScroll = regionScroll;
+        DockPanel.SetDock(regionScroll, Dock.Bottom);
         DockPanel.SetDock(_help, Dock.Bottom);
-        _regionList.Margin = new Thickness(0, 8, 0, 0);
-        root.Children.Add(head); root.Children.Add(footer); root.Children.Add(_regionList); root.Children.Add(_help); root.Children.Add(_editor);
+        root.Children.Add(head); root.Children.Add(footer); root.Children.Add(regionScroll); root.Children.Add(_help); root.Children.Add(_editor);
 
-        _window = DialogKit.Create(owner, resume ? "감시 재시작" : editing == null ? "감시 눈깔 등록" : "감시 눈깔 수정", 1040, 800, root);
-        _editor.Changed += RefreshRegionList;
+        _window = DialogKit.Create(owner, resume ? "감시 재시작" : editing == null ? "감시 눈깔 등록" : "감시 눈깔 수정", 1040, DialogKit.FitHeight(DialogKit.TallHeight), root);
+        _editor.Changed += () =>
+        {
+            RefreshRegionList();
+            _regionScroll?.Dispatcher.BeginInvoke(new Action(() => _regionScroll.ScrollToEnd()), System.Windows.Threading.DispatcherPriority.Loaded);   // 4번째 영역부터는 목록 칸 아래에 생기므로 보이게 내려 준다
+        };
         FillCharacters(editing?.Character);
         if (resume) _character.IsEnabled = false;   // 캐릭터는 바꿀 수 없다
         _character.SelectionChanged += (_, _) => { if (!_filling) LoadImage(); };
@@ -295,6 +309,7 @@ internal sealed class WatcherWizard
             _regionStatus.Foreground = same ? UiKit.Good : UiKit.Warn;
         }
         _regionList.Children.Clear();
+        if (_editor.Regions.Count == 0) _regionList.Children.Add(UiKit.Dim("지정한 영역이 여기에 표시됩니다.", 12, new Thickness(0, 3, 0, 0), false));
         for (int i = 0; i < _editor.Regions.Count; i++)
         {
             var r = _editor.Regions[i]; var index = i;

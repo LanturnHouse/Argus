@@ -10,6 +10,12 @@ namespace Argus.Modules.Cctv;
 /// <summary>모든 CCTV 보조 창의 공통 모양 (Argus 테마 배경, 작업 표시줄에 안 뜸, 소유 창 가운데).</summary>
 internal static class DialogKit
 {
+    /// <summary>스크린샷을 크게 보여 주는 대화상자(눈깔 등록 · 감시 재시작)의 기본 높이. 한 흐름의 창들이 같은 크기로 열리게 모아 둔다.</summary>
+    public const double TallHeight = 830;
+
+    /// <summary>작은 화면(작업 표시줄을 뺀 높이가 모자란 경우)에서 창 아래(저장 단추)가 화면 밖으로 밀리지 않게 높이를 줄인다.</summary>
+    public static double FitHeight(double wanted) => Math.Max(560, Math.Min(wanted, SystemParameters.WorkArea.Height - 20));
+
     public static Window Create(Window? owner, string title, double width, double height, UIElement content)
     {
         var w = new Window
