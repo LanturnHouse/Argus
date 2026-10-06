@@ -57,16 +57,25 @@ Argus 는 게임에 입력을 보내지 않습니다. 단축키는 창을 앞으
 | 아키텍처 | x64 |
 | 그래픽 | 하드웨어 Direct3D 11 지원 (CCTV 화면 캡처에 필요) |
 | 빌드할 때 | .NET 10 SDK, 인터넷 연결 (NuGet 패키지 복원) |
-| 실행할 때 | .NET 10 Desktop Runtime (x64). 아래 `publish.bat` 으로 만든 exe 기준입니다. |
+| 실행할 때 | [.NET 10 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0). 릴리즈의 `Argus.exe` 와 `publish.bat` 으로 만든 exe 모두 런타임을 포함하지 않는 단일 파일입니다. |
 | 권한 | 보통은 일반 권한으로 실행합니다. EVE 를 관리자 권한으로 실행한다면 Argus 도 관리자 권한으로 실행해야 단축키가 동작합니다. |
 | EVE Online | 캐릭터로 로그인한 클라이언트. 창 제목이 `EVE - 캐릭터이름` 으로 보여야 합니다. |
 | 분석 기능만 | [Ollama](#분석) 와 이미지를 읽을 수 있는 비전 모델. 권장 모델은 `qwen2.5vl:7b` (그래픽 메모리 약 6GB) 입니다. 다른 기능은 Ollama 없이 동작합니다. |
 | 전투 수치만 | EVE 가 기록하는 전투 로그. 한국어 클라이언트 로그로 검증했고 영어는 형식만 구현했습니다. |
-| 인터넷 | 빌드할 때 필요합니다. 실행 중에는 설정 프리셋 화면에서 캐릭터 이름을 조회할 때만 씁니다. |
+| 인터넷 | 소스에서 빌드할 때 필요합니다. 실행 중에는 설정 프리셋 화면에서 캐릭터 이름을 조회할 때만 씁니다. |
 
 ## 설치와 실행
 
-설치 프로그램은 없습니다. 결과물은 `Argus.exe` 하나입니다. 현재 저장소에는 배포용 exe 가 없으므로 **직접 빌드**합니다.
+설치 프로그램은 없습니다. 결과물은 `Argus.exe` 하나입니다. 받아서 쓰는 방법과 직접 빌드하는 방법 두 가지가 있습니다.
+
+### 릴리즈에서 받기
+
+1. [.NET 10 Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/10.0) 을 설치합니다. 이미 있으면 건너뜁니다.
+2. [Releases](https://github.com/LanturnHouse/Argus/releases/latest) 에서 `Argus.exe` 를 받아 원하는 폴더에 둡니다.
+3. `Argus.exe` 를 실행합니다.
+
+- 코드 서명이 없는 파일이라 처음 실행할 때 Windows SmartScreen 이 "Windows의 PC 보호" 창을 띄울 수 있습니다. **추가 정보 → 실행** 을 누르면 됩니다. 릴리즈 설명에 파일의 SHA-256 이 적혀 있으니, 받은 파일이 같은지 `Get-FileHash .\Argus.exe` 로 확인할 수 있습니다.
+- 설정과 기록은 exe 옆이 아니라 `%AppData%\Argus` 에 저장됩니다. exe 를 새 버전으로 바꿔도 설정은 그대로입니다. ([데이터 저장 위치](#데이터-저장-위치와-개인정보))
 
 ### 직접 빌드
 
