@@ -278,15 +278,21 @@ internal static class CorpWindow
         summary.Children.Add(UiKit.Dim("마지막 확인 상태 기준", 12, new Thickness(0, 0, 0, 8)));
         summary.Children.Add(UiKit.Text($"도킹 확인  {corp.Docked}", 13, null, UiKit.Good));
         summary.Children.Add(UiKit.Text($"감지 · 미도킹  {corp.Observed}", 13, null, UiKit.Warn, new Thickness(0, 2, 0, 12)));
+        // 함선 목록은 종류가 많으면 창보다 길어지므로 소속 요약(위, 고정) 아래 칸에서 따로 스크롤한다.
+        var shipRows = new StackPanel();
         foreach (var (ship, count) in corp.Ships.OrderByDescending(s => s.Count))
         {
             var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
             var c = UiKit.Text($"× {count}", 12.5, FontWeights.SemiBold); DockPanel.SetDock(c, Dock.Right);
-            row.Children.Add(c); row.Children.Add(UiKit.Text(ship, 12.5));
-            summary.Children.Add(row);
+            var shipName = UiKit.Text(ship, 12.5); shipName.TextTrimming = TextTrimming.CharacterEllipsis;
+            row.Children.Add(c); row.Children.Add(shipName);
+            shipRows.Children.Add(row);
         }
-        Grid.SetColumn(scroll, 0); Grid.SetColumn(summary, 2);
-        grid.Children.Add(scroll); grid.Children.Add(summary);
+        var right = new DockPanel();
+        DockPanel.SetDock(summary, Dock.Top);
+        right.Children.Add(summary); right.Children.Add(UiKit.InnerScroll(shipRows, double.PositiveInfinity));
+        Grid.SetColumn(scroll, 0); Grid.SetColumn(right, 2);
+        grid.Children.Add(scroll); grid.Children.Add(right);
         DialogKit.Create(owner, $"{corp.Name} 전력 상세", 820, 560, grid).ShowDialog();
     }
 }
