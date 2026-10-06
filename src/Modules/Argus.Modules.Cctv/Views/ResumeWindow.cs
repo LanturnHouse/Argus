@@ -132,7 +132,7 @@ internal static class ResumeWindow
         }
 
         host.Content = PickerPage();
-        window = DialogKit.Create(owner, $"감시 재시작 — {watcher.Label}", 1040, 800, host);
+        window = DialogKit.Create(owner, $"감시 재시작 — {watcher.Label}", 1040, DialogKit.FitHeight(DialogKit.TallHeight), host);   // 다음 단계(영역 확인 창)와 같은 크기
         window.ShowDialog();
         return result;
     }
