@@ -93,6 +93,36 @@ public sealed class CaptureService : IDisposable
 
     public bool IsMinimized(string character) => _entries.TryGetValue(character, out var e) && e.Session?.IsMinimized == true;
 
+    // ---- 영역 프리셋 ----
+
+    /// <summary>저장된 영역 프리셋 (이름순).</summary>
+    public IReadOnlyList<RegionPreset> RegionPresets
+    {
+        get { lock (_sync) return [.. _settings.RegionPresets.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)]; }
+    }
+
+    public bool RegionPresetExists(string name)
+    {
+        lock (_sync) return _settings.RegionPresets.Any(p => string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    /// <summary>프리셋을 저장한다. 같은 이름이 있으면 바꿔 쓴다.</summary>
+    public void SaveRegionPreset(RegionPreset preset)
+    {
+        lock (_sync)
+        {
+            _settings.RegionPresets.RemoveAll(p => string.Equals(p.Name, preset.Name, StringComparison.CurrentCultureIgnoreCase));
+            _settings.RegionPresets.Add(preset);
+        }
+        Save();
+    }
+
+    public void DeleteRegionPreset(string name)
+    {
+        lock (_sync) _settings.RegionPresets.RemoveAll(p => string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase));
+        Save();
+    }
+
     public void Save()
     {
         lock (_sync)

@@ -99,7 +99,7 @@ public partial class PreviewView : UserControl
 
     private void NewPreset_Click(object sender, RoutedEventArgs e)
     {
-        var name = PromptWindow.Ask(Window.GetWindow(this), "새 프리셋", "프리셋 이름 (현재 프리뷰 배치와 단축키 설정을 복사해서 만듭니다)");
+        var name = Argus.Ui.PromptWindow.Ask(Window.GetWindow(this), "새 프리셋", "프리셋 이름 (현재 프리뷰 배치와 단축키 설정을 복사해서 만듭니다)");
         if (name == null) return;
         if (_svc.PresetNameTaken(name)) { MessageBox.Show($"'{name}' 이름의 프리셋이 이미 있습니다.", "새 프리셋", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         _svc.CreatePreset(name);
@@ -111,7 +111,7 @@ public partial class PreviewView : UserControl
     private void RenamePreset_Click(object sender, RoutedEventArgs e)
     {
         var p = PresetOf(sender) ?? _svc.ActivePreset;
-        var name = PromptWindow.Ask(Window.GetWindow(this), "프리셋 이름 변경", "새 이름", p.Name);
+        var name = Argus.Ui.PromptWindow.Ask(Window.GetWindow(this), "프리셋 이름 변경", "새 이름", p.Name);
         if (name == null || name == p.Name) return;
         if (_svc.PresetNameTaken(name, p.Id)) { MessageBox.Show($"'{name}' 이름의 프리셋이 이미 있습니다.", "이름 변경", MessageBoxButton.OK, MessageBoxImage.Information); return; }
         _svc.RenamePreset(p.Id, name);

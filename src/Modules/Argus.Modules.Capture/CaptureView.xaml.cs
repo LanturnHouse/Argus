@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -44,6 +45,7 @@ public partial class CaptureView : UserControl
     private readonly CaptureService _service;
     private readonly ObservableCollection<ClientRow> _rows = [];
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly DispatcherTimer _noteSave = new(DispatcherPriority.Normal) { Interval = TimeSpan.FromMilliseconds(600) };   // 메모 입력이 멈추면 파일에 저장 (화면 갱신이 바빠도 밀리지 않게 보통 우선순위)
     private ClientCaptureConfig? _cfg;
     private string? _character;
     private bool _loading;
@@ -61,10 +63,11 @@ public partial class CaptureView : UserControl
 
         _service.ClientsUpdated += () => Dispatcher.BeginInvoke(RefreshList);
         _service.DetectionLogged += name => Dispatcher.BeginInvoke(() => { if (name == _character) RefreshLog(); });
-        NoteBox.TextChanged += (_, _) => NoteHint.Visibility = NoteBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        NoteBox.TextChanged += (_, _) => Note_Changed();
+        _noteSave.Tick += (_, _) => FlushNote();
         _timer.Tick += (_, _) => Tick();
         Loaded += (_, _) => { RefreshList(); _timer.Start(); };
-        Unloaded += (_, _) => _timer.Stop();
+        Unloaded += (_, _) => { _timer.Stop(); FlushNote(); };
     }
 
     // ---- 클라이언트 목록 ----
@@ -146,19 +149,32 @@ public partial class CaptureView : UserControl
 
     // ---- 메모 ----
 
-    private void Note_LostFocus(object sender, RoutedEventArgs e)
+    // 입력하는 동안 바로 설정에 넣어 왼쪽 목록 · 대시보드에 그대로 보이게 하고, 파일 저장은 입력이 멈출 때(0.6초) · Enter · 다른 곳으로 옮길 때 한다.
+    private void Note_Changed()
     {
+        NoteHint.Visibility = NoteBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (_loading || _cfg == null) return;
         var text = NoteBox.Text.Trim();
-        NoteHint.Visibility = text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (text == _cfg.Note) return;
         _cfg.Note = text;
+        if (_rows.FirstOrDefault(r => r.Name == _character) is { } row) row.Note = text;
+        _noteSave.Stop(); _noteSave.Start();
+    }
+
+    private void FlushNote()
+    {
+        if (!_noteSave.IsEnabled) return;
+        _noteSave.Stop();
         _service.Save();
     }
 
+    private void Note_LostFocus(object sender, RoutedEventArgs e) => FlushNote();
+
     private void Note_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter) Keyboard.ClearFocus(); // LostFocus 로 저장
+        if (e.Key != Key.Enter) return;
+        FlushNote();
+        Keyboard.ClearFocus();
     }
 
     // ---- 감시 영역 ----
@@ -186,20 +202,135 @@ public partial class CaptureView : UserControl
             Int32Rect? current = cfg.HasRoi ? new Int32Rect(cfg.RoiX, cfg.RoiY, cfg.RoiW, cfg.RoiH) : null;
 
             var owner = Window.GetWindow(this);
-            var picker = new RegionPickerWindow(shot, current) { Owner = owner };
+            var picker = new RegionPickerWindow(shot, current, _service.RegionPresets) { Owner = owner };
             if (owner != null) { picker.Left = owner.Left; picker.Top = owner.Top; } // 앱이 떠 있는 모니터에서 열기
             if (picker.ShowDialog() != true || picker.Result is not { } r) return;
 
-            cfg.RoiX = r.X; cfg.RoiY = r.Y; cfg.RoiW = r.Width; cfg.RoiH = r.Height;
+            if (picker.ChosenPreset is { } preset) preset.ApplyTo(cfg, shot.PixelWidth, shot.PixelHeight);   // 프리셋을 골라 확인했으면 감시 설정도 함께
+            else { cfg.RoiX = r.X; cfg.RoiY = r.Y; cfg.RoiW = r.Width; cfg.RoiH = r.Height; }
+            cfg.RoiFrameW = shot.PixelWidth; cfg.RoiFrameH = shot.PixelHeight;
             _service.Save();
-            if (_character == name)
-            {
-                UpdateRegionCard();
-                UpdateButtons();
-                UpdateStatus();
-            }
+            if (_character == name) SelectClient(name);   // 영역 카드와 감도 · 주기 등 화면 값을 다시 읽는다
         }
         finally { PickBtn.IsEnabled = true; }
+    }
+
+    // ---- 영역 프리셋 ----
+
+    private Popup? _presetPopup;
+
+    /// <summary>[프리셋 ▾]: 저장된 영역 프리셋(누르면 이 클라이언트에 적용)과 '지금 영역과 설정을 프리셋으로 저장'.</summary>
+    private void Preset_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cfg == null || _character == null) return;
+        _presetPopup ??= new Popup
+        {
+            PlacementTarget = PresetBtn, Placement = PlacementMode.Custom, StaysOpen = false, AllowsTransparency = true, PopupAnimation = PopupAnimation.Fade,
+            // 단추 오른쪽 끝에 맞춰 아래로 연다 (단추가 카드 오른쪽에 있어서 왼쪽 정렬이면 창 밖으로 나간다)
+            CustomPopupPlacementCallback = (popup, target, _) => [new CustomPopupPlacement(new Point(target.Width - popup.Width, target.Height + 6), PopupPrimaryAxis.Horizontal)],
+        };
+        _presetPopup.Child = BuildPresetPanel();
+        _presetPopup.IsOpen = true;
+    }
+
+    private Brush Res(string key) => (Brush)FindResource(key);
+
+    private FrameworkElement BuildPresetPanel()
+    {
+        var list = new StackPanel();
+        list.Children.Add(new TextBlock { Text = "영역 프리셋", FontSize = 12, Foreground = Res("TextDim"), Margin = new Thickness(10, 4, 10, 6) });
+        var presets = _service.RegionPresets;
+        if (presets.Count == 0)
+            list.Children.Add(new TextBlock { Text = "저장된 프리셋이 없습니다. 영역을 지정한 뒤 아래에서 저장하세요.", FontSize = 12, Foreground = Res("TextDim"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(10, 2, 10, 8) });
+        foreach (var p in presets) list.Children.Add(PresetRow(p));
+
+        list.Children.Add(new Border { Height = 1, Background = Res("Line"), Margin = new Thickness(4, 6, 4, 6) });
+        var canSave = _cfg is { HasRoi: true };
+        var save = MenuRow(new TextBlock { Text = "＋  지금 영역과 설정을 프리셋으로 저장…", FontWeight = FontWeights.SemiBold, Foreground = Res(canSave ? "AccentHover" : "TextDim") },
+            canSave ? () => { _presetPopup!.IsOpen = false; SaveCurrentAsPreset(); } : null);
+        if (!canSave) save.ToolTip = "먼저 감시 영역을 지정하세요";
+        list.Children.Add(save);
+
+        return new Border
+        {
+            Width = 420, Padding = new Thickness(6), CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1),
+            Background = Res("Surface2"), BorderBrush = Res("Line"),
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 4, Opacity = .45 },
+            Child = new ScrollViewer { Content = list, MaxHeight = 440, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
+        };
+    }
+
+    /// <summary>눌러서 실행하는 한 줄 (마우스를 올리면 배경이 바뀐다). onClick 이 null 이면 누를 수 없다.</summary>
+    private Border MenuRow(UIElement content, Action? onClick)
+    {
+        var row = new Border { Child = content, Padding = new Thickness(10, 8, 10, 8), CornerRadius = new CornerRadius(7), Background = Brushes.Transparent, Cursor = onClick != null ? Cursors.Hand : null };
+        if (onClick != null)
+        {
+            row.MouseEnter += (_, _) => row.Background = Res("Surface3");
+            row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+            row.MouseLeftButtonUp += (_, _) => onClick();
+        }
+        return row;
+    }
+
+    private Border PresetRow(RegionPreset p)
+    {
+        var del = new Button { Content = "삭제", Padding = new Thickness(10, 3, 10, 3), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+        del.SetResourceReference(StyleProperty, "GhostButton");
+        del.Click += (_, _) =>
+        {
+            if (MessageBox.Show(Window.GetWindow(this), $"'{p.Name}' 프리셋을 삭제할까요?\n(이 프리셋을 적용한 클라이언트의 감시 영역은 그대로 남습니다.)", "영역 프리셋 삭제",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+            _service.DeleteRegionPreset(p.Name);
+            if (_presetPopup != null) { _presetPopup.Child = BuildPresetPanel(); _presetPopup.IsOpen = true; }
+        };
+        var info = new StackPanel();
+        info.Children.Add(new TextBlock { Text = p.Name, FontSize = 13.5, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+        info.Children.Add(new TextBlock { Text = RegionPresetText.RegionLine(p), FontSize = 12, Foreground = Res("TextDim"), Margin = new Thickness(0, 2, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis });
+        info.Children.Add(new TextBlock { Text = RegionPresetText.SettingsLine(p), FontSize = 12, Foreground = Res("TextDim"), TextTrimming = TextTrimming.CharacterEllipsis });
+        var dock = new DockPanel();
+        DockPanel.SetDock(del, Dock.Right);
+        dock.Children.Add(del); dock.Children.Add(info);
+        var row = MenuRow(dock, () => { _presetPopup!.IsOpen = false; ApplyPresetToCurrent(p); });
+        row.ToolTip = "이 클라이언트에 적용 (감시 영역 + 감도 · 주기 · 알림 · 저장 범위)";
+        return row;
+    }
+
+    /// <summary>프리셋을 지금 고른 클라이언트에 적용한다. 화면 크기가 저장할 때와 다르면 먼저 묻고, 적용하면 가장 가까운 모서리 기준으로 옮긴다.</summary>
+    private async void ApplyPresetToCurrent(RegionPreset p)
+    {
+        if (_cfg == null || _character == null) return;
+        var cfg = _cfg; var name = _character;
+        var frame = await Task.Run(() => _service.Grab(name));
+        int w = frame?.Width ?? 0, h = frame?.Height ?? 0;
+        if (!RegionPresetText.ConfirmFit(Window.GetWindow(this), p, w, h)) return;
+        p.ApplyTo(cfg, w, h);
+        _service.Save();
+        if (_character == name) SelectClient(name);   // 영역 카드와 감도 · 주기 등 화면 값을 다시 읽는다
+        RefreshRows();
+    }
+
+    /// <summary>지금 클라이언트의 감시 영역과 감시 설정을 이름 붙여 프리셋으로 저장한다.</summary>
+    private async void SaveCurrentAsPreset()
+    {
+        if (_cfg is not { HasRoi: true } || _character == null) return;
+        var cfg = _cfg; var name = _character;
+        var owner = Window.GetWindow(this);
+        var suggested = cfg.Note.Length > 40 ? cfg.Note[..40] : cfg.Note;
+        var presetName = Argus.Ui.PromptWindow.Ask(owner, "영역 프리셋 저장", "프리셋 이름 (지금 감시 영역과 감도 · 주기 · 알림 · 저장 범위를 함께 저장합니다)", suggested);
+        if (presetName == null) return;
+        if (_service.RegionPresetExists(presetName) &&
+            MessageBox.Show(owner, $"'{presetName}' 프리셋이 이미 있습니다. 지금 영역과 설정으로 바꿀까요?", "영역 프리셋 저장",
+                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+
+        // 기준 화면 크기: 영역을 지정할 때의 크기. 예전에 지정한 영역이라 모르면 지금 창 크기로 (최소화돼 있으면 모르는 채로 저장).
+        int w = cfg.RoiFrameW, h = cfg.RoiFrameH;
+        if (w <= 0 || h <= 0)
+        {
+            var frame = await Task.Run(() => _service.Grab(name));
+            w = frame?.Width ?? 0; h = frame?.Height ?? 0;
+        }
+        _service.SaveRegionPreset(RegionPreset.From(presetName, cfg, w, h));
     }
 
     private RegionPreviewWindow? _previewWin;
@@ -217,6 +348,9 @@ public partial class CaptureView : UserControl
     {
         if (_cfg == null) return;
         ViewBtn.IsEnabled = _cfg.HasRoi;
+        PresetBtn.ToolTip = _service.RegionPresets.Count == 0 && !_cfg.HasRoi
+            ? "영역을 지정한 뒤 영역 프리셋으로 저장하면, 다른 클라이언트에도 같은 영역과 설정을 바로 적용할 수 있습니다"
+            : "감시 영역과 감시 설정을 영역 프리셋으로 저장하거나, 저장한 프리셋을 이 클라이언트에 적용합니다";
         if (_cfg.HasRoi)
         {
             RoiLabel.Text = $"{_cfg.RoiW} × {_cfg.RoiH}  @ ({_cfg.RoiX}, {_cfg.RoiY})";
