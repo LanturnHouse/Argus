@@ -2,10 +2,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 
-namespace Argus.Modules.Preview;
+namespace Argus.Ui;
 
-/// <summary>이름 하나를 입력받는 작은 창 (프리셋 이름 등). 테마 스타일이 그대로 적용된다.</summary>
-internal sealed class PromptWindow : Window
+/// <summary>이름 하나를 입력받는 작은 창 (프리셋 이름 등). 테마 스타일이 그대로 적용된다. 여러 모듈이 같이 쓴다.</summary>
+public sealed class PromptWindow : Window
 {
     private readonly TextBox _box = new() { MaxLength = 40 };
 
@@ -16,7 +16,7 @@ internal sealed class PromptWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
-        Argus.Ui.DarkTitleBar.Apply(this);
+        DarkTitleBar.Apply(this);
         SetResourceReference(BackgroundProperty, "Bg");
         SetResourceReference(ForegroundProperty, "Text");
 

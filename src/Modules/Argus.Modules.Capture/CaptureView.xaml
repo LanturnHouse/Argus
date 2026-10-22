@@ -81,6 +81,8 @@
             <Border Grid.Row="1" Style="{DynamicResource Card}" Margin="0,0,0,12">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="PresetBtn" Content="프리셋  ▾" Padding="16,10" Margin="0,0,8,0" Click="Preset_Click"
+                                ToolTip="감시 영역과 감시 설정을 영역 프리셋으로 저장하거나, 저장한 프리셋을 이 클라이언트에 적용합니다"/>
                         <Button x:Name="ViewBtn" Content="영역 보기" Padding="18,10" Margin="0,0,8,0" Click="ViewRegion_Click"
                                 ToolTip="현재 감시 중인 영역을 실시간으로 확인합니다"/>
                         <Button x:Name="PickBtn" Padding="20,10" Style="{DynamicResource PrimaryButton}" Click="PickRegion_Click" Content="영역 지정"/>

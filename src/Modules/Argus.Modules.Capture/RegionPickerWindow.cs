@@ -31,17 +31,22 @@ internal sealed class RegionPickerWindow : Window
     private readonly TextBlock _size = new() { Foreground = Brushes.White, FontSize = 13 };
     private readonly Button _ok = new() { Content = "확인 (Enter)", Padding = new Thickness(18, 8, 18, 8), Margin = new Thickness(0, 0, 8, 0), IsEnabled = false };
     private Point? _dragStart;
+    private readonly IReadOnlyList<RegionPreset> _presets;
 
     /// <summary>선택된 영역 (스냅샷 픽셀 좌표). 취소하면 null.</summary>
     public Int32Rect? Result { get; private set; }
 
+    /// <summary>영역 프리셋을 눌러 고른 뒤 그대로 확인했으면 그 프리셋 (감시 설정도 함께 적용한다). 직접 끌어서 고쳤으면 null.</summary>
+    public RegionPreset? ChosenPreset { get; private set; }
+
     private Int32Rect? _selection;
 
-    public RegionPickerWindow(BitmapSource shot, Int32Rect? current)
+    public RegionPickerWindow(BitmapSource shot, Int32Rect? current, IReadOnlyList<RegionPreset>? presets = null)
     {
         _shot = shot;
         _image.Source = shot;
         _selection = current;
+        _presets = presets ?? [];
 
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -76,7 +81,7 @@ internal sealed class RegionPickerWindow : Window
     {
         var t = new TextBlock
         {
-            Text = "드래그로 영역 선택",
+            Text = _presets.Count > 0 ? "드래그로 영역 선택  ·  아래의 프리셋을 눌러 불러올 수도 있습니다" : "드래그로 영역 선택",
             Foreground = Brushes.White,
             FontSize = 15,
         };
@@ -102,6 +107,19 @@ internal sealed class RegionPickerWindow : Window
         cancel.Click += (_, _) => DialogResult = false;
 
         var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        if (_presets.Count > 0)
+        {
+            // 영역 프리셋: 누르면 지금 화면 위에 그 영역을 그려 보여 준다 (창 크기가 다르면 먼저 묻는다). 확인(Enter)하면 감시 설정도 함께 적용된다.
+            panel.Children.Add(new TextBlock { Text = "프리셋", Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x93, 0xA5)), FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+            foreach (var p in _presets)
+            {
+                var chip = new Button { Content = p.Name, Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 6, 0), ToolTip = RegionPresetText.RegionLine(p) + "\n" + RegionPresetText.SettingsLine(p), Focusable = false };
+                var preset = p;
+                chip.Click += (_, _) => PickPreset(preset);
+                panel.Children.Add(chip);
+            }
+            panel.Children.Add(new Border { Width = 1, Height = 22, Background = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)), Margin = new Thickness(10, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center });
+        }
         panel.Children.Add(_size);
         _size.Margin = new Thickness(0, 0, 18, 0);
         _size.VerticalAlignment = VerticalAlignment.Center;
@@ -118,6 +136,17 @@ internal sealed class RegionPickerWindow : Window
             VerticalAlignment = VerticalAlignment.Bottom,
             Child = panel,
         };
+    }
+
+    /// <summary>프리셋 영역을 지금 화면에 맞춰 선택한다. 화면 크기가 저장할 때와 다르면 먼저 묻는다.</summary>
+    private void PickPreset(RegionPreset p)
+    {
+        if (!RegionPresetText.ConfirmFit(this, p, _shot.PixelWidth, _shot.PixelHeight)) return;
+        var (x, y, w, h) = p.FitTo(_shot.PixelWidth, _shot.PixelHeight);
+        _selection = new Int32Rect(x, y, w, h);
+        ChosenPreset = p;
+        Redraw();
+        Focus();   // Enter 로 바로 확인할 수 있게
     }
 
     private void Confirm()
@@ -137,6 +166,7 @@ internal sealed class RegionPickerWindow : Window
     private void Down(object sender, MouseButtonEventArgs e)
     {
         _dragStart = e.GetPosition(_canvas);
+        ChosenPreset = null;   // 직접 그리면 프리셋이 아니다
         _canvas.CaptureMouse();
     }
 
@@ -191,6 +221,6 @@ internal sealed class RegionPickerWindow : Window
         _dim.Data = g;
 
         _ok.IsEnabled = r.Width >= 4 && r.Height >= 4;
-        _size.Text = $"{r.Width} × {r.Height}  @ ({r.X}, {r.Y})";
+        _size.Text = (ChosenPreset != null ? $"프리셋 '{ChosenPreset.Name}'  ·  " : "") + $"{r.Width} × {r.Height}  @ ({r.X}, {r.Y})";
     }
 }
