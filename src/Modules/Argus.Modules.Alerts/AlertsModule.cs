@@ -7,7 +7,7 @@ namespace Argus.Modules.Alerts;
 
 public sealed class AlertsSettings
 {
-    /// <summary>비어 있으면 시스템 경고음(BEEP), 아니면 해당 .wav 파일을 재생한다.</summary>
+    /// <summary>비어 있으면 기본 경보음(삐비빅, 앱에 내장), 아니면 해당 .wav 파일을 재생한다.</summary>
     public string SoundPath { get; set; } = "";
 }
 
@@ -58,8 +58,28 @@ public sealed class AlertsModule : IArgusModule
                 using var p = new SoundPlayer(_settings.SoundPath);
                 p.Play(); // 비동기 재생
             }
-            else SystemSounds.Exclamation.Play();
+            else DefaultAlarm().Play();
         }
         catch { try { SystemSounds.Exclamation.Play(); } catch { } }   // 재생 못 하는 wav(비 PCM/손상)면 소리 없이 사라지지 않게 시스템음으로 대체; 폴백 실패도 삼킴
+    }
+
+    private static readonly object AlarmLock = new();
+    private static SoundPlayer? _alarm;
+
+    /// <summary>기본 경보음 '삐비빅' (Assets\alarm.wav, 어셈블리에 내장). 처음 한 번 메모리에 읽어 두고 계속 쓴다.</summary>
+    internal static SoundPlayer DefaultAlarm()
+    {
+        lock (AlarmLock)
+        {
+            if (_alarm != null) return _alarm;
+            using var res = typeof(AlertsModule).Assembly.GetManifestResourceStream("Argus.Modules.Alerts.alarm.wav")
+                ?? throw new InvalidOperationException("기본 경보음 리소스가 없습니다.");
+            var data = new MemoryStream();
+            res.CopyTo(data);
+            data.Position = 0;
+            var player = new SoundPlayer(data);
+            player.Load();
+            return _alarm = player;
+        }
     }
 }
