@@ -4,6 +4,11 @@
     <ProjectReference Include="..\..\Argus.Core\Argus.Core.csproj" />
   </ItemGroup>
 
+  <!-- 기본 경보음 '삐비빅' (알림음을 지정하지 않으면 재생). 단일 exe 안에 들어가도록 어셈블리에 넣는다. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\alarm.wav" LogicalName="Argus.Modules.Alerts.alarm.wav" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.22000.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
